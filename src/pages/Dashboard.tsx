@@ -252,7 +252,7 @@ const Dashboard = () => {
                   icon={MessageSquare}
                   title="Ask AI Guide"
                   description="Get health questions answered"
-                  href="/assistant"
+                  href="/ai-health-guide"
                   color="secondary"
                 />
                 <QuickActionCard

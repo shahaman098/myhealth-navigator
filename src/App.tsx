@@ -7,7 +7,7 @@ import Layout from "./components/Layout";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import Timeline from "./pages/Timeline";
-import Assistant from "./pages/Assistant";
+import AIHealthGuide from "./pages/AIHealthGuide";
 import Appointments from "./pages/Appointments";
 import Documents from "./pages/Documents";
 import Settings from "./pages/Settings";
@@ -26,7 +26,7 @@ const App = () => (
             <Route path="/" element={<Home />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/timeline" element={<Timeline />} />
-            <Route path="/assistant" element={<Assistant />} />
+            <Route path="/ai-health-guide" element={<AIHealthGuide />} />
             <Route path="/appointments" element={<Appointments />} />
             <Route path="/documents" element={<Documents />} />
             <Route path="/settings" element={<Settings />} />

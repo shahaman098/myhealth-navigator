@@ -8,7 +8,7 @@ import ChatBubble from "@/components/chat/ChatBubble";
 import QuickPromptCard from "@/components/chat/QuickPromptCard";
 import { useHealthChat } from "@/hooks/useHealthChat";
 
-const Assistant = () => {
+const AIHealthGuide = () => {
   const [input, setInput] = useState("");
   const { messages, isLoading, sendMessage, cancelRequest } = useHealthChat();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -181,4 +181,4 @@ const Assistant = () => {
   );
 };
 
-export default Assistant;
+export default AIHealthGuide;

@@ -1,5 +1,7 @@
+import { SidebarProvider } from "@/components/ui/sidebar";
+import { Sidebar } from "@/components/Sidebar";
+import { Topbar } from "@/components/Topbar";
 import { ReactNode } from "react";
-import Navigation from "./Navigation";
 
 interface LayoutProps {
   children: ReactNode;
@@ -7,10 +9,15 @@ interface LayoutProps {
 
 const Layout = ({ children }: LayoutProps) => {
   return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
-      <main>{children}</main>
-    </div>
+    <SidebarProvider>
+      <div className="min-h-screen flex w-full">
+        <Sidebar />
+        <div className="flex-1 flex flex-col">
+          <Topbar />
+          <main className="flex-1">{children}</main>
+        </div>
+      </div>
+    </SidebarProvider>
   );
 };
 
