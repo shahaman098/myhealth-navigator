@@ -54,14 +54,14 @@ const Home = () => {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button 
-                size="lg" 
-                className="text-lg shadow-glow hover:shadow-lg"
-                onClick={() => navigate("/timeline")}
-              >
-                <Heart className="h-5 w-5 mr-2" />
-                Get Started
-              </Button>
+            <Button 
+              size="lg" 
+              className="text-lg shadow-glow hover:shadow-lg"
+              onClick={() => navigate("/dashboard")}
+            >
+              <Heart className="h-5 w-5 mr-2" />
+              Get Started
+            </Button>
               <Button 
                 size="lg" 
                 variant="outline"
@@ -123,10 +123,10 @@ const Home = () => {
             <Button 
               size="lg" 
               className="text-lg shadow-glow"
-              onClick={() => navigate("/timeline")}
+              onClick={() => navigate("/dashboard")}
             >
               <Activity className="h-5 w-5 mr-2" />
-              View Your Timeline
+              View Your Dashboard
             </Button>
           </Card>
         </div>
