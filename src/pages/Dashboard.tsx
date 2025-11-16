@@ -266,7 +266,7 @@ const Dashboard = () => {
                   icon={Download}
                   title="Download Records"
                   description="Export your health data"
-                  href="/timeline"
+                  href="/documents"
                   color="primary"
                 />
               </div>
