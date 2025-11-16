@@ -1,38 +1,42 @@
-import { mockTimelineData } from "@/data/mockTimeline";
+import { supabase } from "@/integrations/supabase/client";
 import { TimelineEvent } from "@/components/timeline/TimelineItem";
 
 /**
- * Mock API function to fetch patient timeline events
- * In a real application, this would make an HTTP request to your backend
+ * Fetch patient timeline events from Heidi API via Edge Function
  */
 export const getPatientTimeline = async (): Promise<TimelineEvent[]> => {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-  
-  // Return mock data sorted by date (newest first)
-  return mockTimelineData.sort((a, b) => 
-    new Date(b.date).getTime() - new Date(a.date).getTime()
-  );
+  try {
+    const { data, error } = await supabase.functions.invoke('heidi-timeline');
+    
+    if (error) {
+      console.error('Error fetching timeline:', error);
+      throw error;
+    }
+
+    return data?.timeline || [];
+  } catch (error) {
+    console.error('Failed to fetch patient timeline:', error);
+    // Return empty array on error
+    return [];
+  }
 };
 
 /**
- * Mock API function to filter timeline events by type
+ * Filter timeline events by type
  */
 export const getTimelineByType = async (
   type: TimelineEvent["type"]
 ): Promise<TimelineEvent[]> => {
-  await new Promise(resolve => setTimeout(resolve, 300));
-  
-  return mockTimelineData.filter(event => event.type === type);
+  const allEvents = await getPatientTimeline();
+  return allEvents.filter(event => event.type === type);
 };
 
 /**
- * Mock API function to get a single timeline event by ID
+ * Get a single timeline event by ID
  */
 export const getTimelineEventById = async (
   id: string
 ): Promise<TimelineEvent | undefined> => {
-  await new Promise(resolve => setTimeout(resolve, 200));
-  
-  return mockTimelineData.find(event => event.id === id);
+  const allEvents = await getPatientTimeline();
+  return allEvents.find(event => event.id === id);
 };
