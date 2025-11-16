@@ -15,7 +15,7 @@ import { useAuth } from "@/hooks/useAuth";
 
 export function Topbar() {
   const navigate = useNavigate();
-  const { signOut, user } = useAuth();
+  const { signOut, user, userProfile } = useAuth();
 
   return (
     <header className="sticky top-0 z-50 w-full glass-strong">
@@ -72,7 +72,16 @@ export function Topbar() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="glass">
-            <DropdownMenuLabel>{user?.email || 'User'}</DropdownMenuLabel>
+            <DropdownMenuLabel>
+              <div className="flex flex-col space-y-1">
+                <p className="text-sm font-medium leading-none">
+                  {userProfile?.full_name || 'User'}
+                </p>
+                <p className="text-xs leading-none text-muted-foreground">
+                  {user?.email}
+                </p>
+              </div>
+            </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => navigate("/dashboard")}>
               Dashboard
