@@ -66,7 +66,7 @@ const Home = () => {
                 size="lg" 
                 variant="outline"
                 className="text-lg"
-                onClick={() => navigate("/assistant")}
+                onClick={() => navigate("/ai-health-guide")}
               >
                 <MessageSquare className="h-5 w-5 mr-2" />
                 Talk to AI Assistant
