@@ -5,11 +5,22 @@ import { useNavigate } from 'react-router-dom';
 
 export type UserRole = 'doctor' | 'patient';
 
+export interface UserProfile {
+  id: string;
+  email: string;
+  full_name: string;
+  conditions?: string;
+  medications?: string;
+  health_concern?: string;
+  goal?: string;
+}
+
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -19,13 +30,15 @@ export function useAuth() {
         setSession(session);
         setUser(session?.user ?? null);
         
-        // Fetch user role after auth state changes
+        // Fetch user role and profile after auth state changes
         if (session?.user) {
           setTimeout(() => {
             fetchUserRole(session.user.id);
+            fetchUserProfile(session.user.id);
           }, 0);
         } else {
           setUserRole(null);
+          setUserProfile(null);
           setLoading(false);
         }
       }
@@ -38,6 +51,7 @@ export function useAuth() {
       
       if (session?.user) {
         fetchUserRole(session.user.id);
+        fetchUserProfile(session.user.id);
       } else {
         setLoading(false);
       }
@@ -63,11 +77,37 @@ export function useAuth() {
     }
   };
 
-  const signUp = async (email: string, password: string, fullName: string, role: UserRole) => {
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error) throw error;
+      setUserProfile(data);
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    }
+  };
+
+  const signUp = async (
+    email: string,
+    password: string,
+    fullName: string,
+    role: UserRole,
+    healthData?: {
+      conditions?: string;
+      medications?: string;
+      healthConcern?: string;
+      goal?: string;
+    }
+  ) => {
     try {
       const redirectUrl = `${window.location.origin}/`;
       
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -80,6 +120,26 @@ export function useAuth() {
       });
 
       if (error) throw error;
+      
+      // Insert profile with health data if user was created
+      if (data.user) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: data.user.id,
+            email,
+            full_name: fullName,
+            conditions: healthData?.conditions,
+            medications: healthData?.medications,
+            health_concern: healthData?.healthConcern,
+            goal: healthData?.goal,
+          });
+
+        if (profileError) {
+          console.error('Error creating profile:', profileError);
+        }
+      }
+      
       return { error: null };
     } catch (error: any) {
       return { error: error.message || 'Failed to sign up' };
@@ -106,6 +166,7 @@ export function useAuth() {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       setUserRole(null);
+      setUserProfile(null);
       navigate('/auth');
     } catch (error: any) {
       console.error('Error signing out:', error);
@@ -116,6 +177,7 @@ export function useAuth() {
     user,
     session,
     userRole,
+    userProfile,
     loading,
     signUp,
     signIn,
