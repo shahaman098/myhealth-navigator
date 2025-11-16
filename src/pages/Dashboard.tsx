@@ -17,13 +17,15 @@ import {
 } from "lucide-react";
 import QuickActionCard from "@/components/dashboard/QuickActionCard";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { userProfile } = useAuth();
 
   // Mock patient data
   const patientInfo = {
-    name: "Sarah Johnson",
+    name: userProfile?.full_name || "User",
     age: 42,
     dateOfBirth: "1982-03-15",
     bloodType: "A+",
