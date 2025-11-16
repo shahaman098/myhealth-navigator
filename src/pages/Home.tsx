@@ -57,10 +57,10 @@ const Home = () => {
             <Button 
               size="lg" 
               className="text-lg shadow-glow hover:shadow-lg"
-              onClick={() => navigate("/dashboard")}
+              onClick={() => navigate("/auth")}
             >
               <Heart className="h-5 w-5 mr-2" />
-              Get Started
+              Sign In / Sign Up
             </Button>
               <Button 
                 size="lg" 
