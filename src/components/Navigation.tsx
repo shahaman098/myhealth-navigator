@@ -1,10 +1,10 @@
-import { Heart, Calendar, MessageSquare, Home, Activity } from "lucide-react";
+import { Heart, Calendar, MessageSquare, Home, Activity, LayoutDashboard } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { cn } from "@/lib/utils";
 
 const Navigation = () => {
   const navItems = [
     { icon: Home, label: "Home", path: "/" },
+    { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
     { icon: Activity, label: "Timeline", path: "/timeline" },
     { icon: MessageSquare, label: "AI Assistant", path: "/assistant" },
     { icon: Calendar, label: "Appointments", path: "/appointments" },
