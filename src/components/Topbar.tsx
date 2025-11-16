@@ -1,4 +1,4 @@
-import { Bell, User } from "lucide-react";
+import { Bell, User, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
@@ -11,9 +11,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 export function Topbar() {
   const navigate = useNavigate();
+  const { signOut, user } = useAuth();
 
   return (
     <header className="sticky top-0 z-50 w-full glass-strong">
@@ -70,7 +72,7 @@ export function Topbar() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="glass">
-            <DropdownMenuLabel>Sarah Johnson</DropdownMenuLabel>
+            <DropdownMenuLabel>{user?.email || 'User'}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => navigate("/dashboard")}>
               Dashboard
@@ -79,7 +81,8 @@ export function Topbar() {
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive">
+            <DropdownMenuItem className="text-destructive" onClick={signOut}>
+              <LogOut className="h-4 w-4 mr-2" aria-hidden="true" />
               Sign Out
             </DropdownMenuItem>
           </DropdownMenuContent>
