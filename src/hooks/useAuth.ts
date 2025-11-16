@@ -66,12 +66,13 @@ export function useAuth() {
         .from('user_roles')
         .select('role')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
       setUserRole(data?.role as UserRole);
     } catch (error) {
       console.error('Error fetching user role:', error);
+      setUserRole(null);
     } finally {
       setLoading(false);
     }
@@ -83,12 +84,13 @@ export function useAuth() {
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
       setUserProfile(data);
     } catch (error) {
       console.error('Error fetching user profile:', error);
+      setUserProfile(null);
     }
   };
 
