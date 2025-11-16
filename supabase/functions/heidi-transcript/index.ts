@@ -296,6 +296,8 @@ serve(async (req) => {
     const HEIDI_API_KEY = Deno.env.get('HEIDI_API_KEY');
     const HEIDI_JWT_SECRET = Deno.env.get('HEIDI_JWT_SECRET');
 
+    console.log(`HEIDI_API_URL configured as: ${HEIDI_API_URL}`);
+
     if (!HEIDI_API_URL || !HEIDI_API_KEY || !HEIDI_JWT_SECRET) {
       throw new Error('Missing Heidi API configuration');
     }
