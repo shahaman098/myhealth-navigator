@@ -1,3 +1,5 @@
+import { supabase } from "@/integrations/supabase/client";
+
 export interface PatientProfile {
   name: string;
   age: number;
@@ -11,24 +13,33 @@ export interface PatientProfile {
 }
 
 /**
- * Mock API function to fetch patient profile information
- * In a real application, this would make an HTTP request to your backend
+ * Fetch patient profile from Heidi API via Edge Function
  */
 export const getPatientProfile = async (): Promise<PatientProfile> => {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 400));
-  
-  return {
-    name: "Sarah Johnson",
-    age: 42,
-    dateOfBirth: "1982-03-15",
-    bloodType: "A+",
-    allergies: ["Penicillin", "Shellfish"],
-    primaryPhysician: "Dr. Michael Chen, MD",
-    email: "sarah.johnson@email.com",
-    phone: "(555) 123-4567",
-    address: "123 Health Street, Medical City, MC 12345",
-  };
+  try {
+    const { data, error } = await supabase.functions.invoke('heidi-profile');
+    
+    if (error) {
+      console.error('Error fetching profile:', error);
+      throw error;
+    }
+
+    return data?.profile;
+  } catch (error) {
+    console.error('Failed to fetch patient profile:', error);
+    // Return fallback profile
+    return {
+      name: "Patient",
+      age: 0,
+      dateOfBirth: "",
+      bloodType: "Unknown",
+      allergies: [],
+      primaryPhysician: "",
+      email: "",
+      phone: "",
+      address: "",
+    };
+  }
 };
 
 /**

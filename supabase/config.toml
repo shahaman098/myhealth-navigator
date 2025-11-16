@@ -2,3 +2,15 @@ project_id = "fybektdncodbaesynapd"
 
 [functions.health-chat]
 verify_jwt = false
+
+[functions.heidi-timeline]
+verify_jwt = false
+
+[functions.health-explainer]
+verify_jwt = false
+
+[functions.heidi-documents]
+verify_jwt = false
+
+[functions.heidi-profile]
+verify_jwt = false
