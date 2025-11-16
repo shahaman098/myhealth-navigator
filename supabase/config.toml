@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.heidi-profile]
 verify_jwt = false
+
+[functions.heidi-transcript-summary]
+verify_jwt = false
