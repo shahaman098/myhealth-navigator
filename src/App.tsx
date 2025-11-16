@@ -10,6 +10,7 @@ import Timeline from "./pages/Timeline";
 import Assistant from "./pages/Assistant";
 import Appointments from "./pages/Appointments";
 import Documents from "./pages/Documents";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/assistant" element={<Assistant />} />
             <Route path="/appointments" element={<Appointments />} />
             <Route path="/documents" element={<Documents />} />
+            <Route path="/settings" element={<Settings />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
