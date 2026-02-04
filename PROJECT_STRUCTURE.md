@@ -144,12 +144,12 @@ All API functions simulate backend calls with delays:
 - **React Router** - Navigation
 - **TanStack Query** - Data fetching
 
-## 📦 Backend Integration (Lovable Cloud)
+## 📦 Backend Integration (Supabase)
 
 The app is ready for backend integration:
 - **Database**: Store timeline events, appointments, documents
 - **Authentication**: User login and data isolation
-- **AI**: Real AI chat via Lovable AI Gateway (already implemented)
+- **AI**: Real AI chat via Supabase Edge Functions and Google Gemini
 - **Storage**: Document uploads with Supabase Storage
 
 ## 🎯 Next Steps

@@ -23,7 +23,6 @@ Required secrets (configured via Supabase):
 HEIDI_API_KEY          # Shared API key for Heidi API
 HEIDI_API_URL          # Base URL for Heidi API (e.g., https://api.heidi.health)
 HEIDI_JWT_SECRET       # Secret for generating JWT tokens
-LOVABLE_API_KEY        # Auto-configured for AI services
 ```
 
 ## API Endpoints
@@ -152,7 +151,7 @@ Provides plain-language explanations of medical information using AI.
 }
 ```
 
-**AI Model:** Google Gemini 2.5 Flash (via Lovable AI Gateway)
+**AI Model:** Google Gemini 2.5 Flash
 
 **Error Codes:**
 - `429` - Rate limit exceeded
@@ -256,11 +255,11 @@ const profile = data?.profile;
 
 ## Deployment
 
-Edge Functions are **automatically deployed** with Lovable Cloud. No manual deployment needed!
+Edge Functions are deployed via the Supabase CLI.
 
 1. Edit function code in `supabase/functions/`
 2. Configure function in `supabase/config.toml`
-3. Push changes - functions deploy automatically
+3. Deploy changes using `supabase functions deploy`
 
 ## Security
 
@@ -274,8 +273,7 @@ Edge Functions are **automatically deployed** with Lovable Cloud. No manual depl
 ### View Logs
 
 ```bash
-# Access logs through Lovable Cloud UI
-# Or use Supabase CLI
+# Use Supabase CLI
 supabase functions logs heidi-timeline
 supabase functions logs health-explainer
 ```
@@ -320,8 +318,6 @@ For issues or questions:
 - Check edge function logs
 - Verify environment variables
 - Test Heidi API connectivity
-- Review AI gateway rate limits
-
 ---
 
-**Built with Lovable Cloud & Supabase Edge Functions**
+**Built with Supabase Edge Functions**

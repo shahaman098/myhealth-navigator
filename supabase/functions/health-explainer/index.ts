@@ -19,9 +19,9 @@ serve(async (req) => {
       throw new Error('Query is required');
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY is not configured");
     }
 
     console.log('Processing health explanation query:', query);
@@ -52,10 +52,10 @@ Guidelines:
       userMessage = `Context from medical records:\n${JSON.stringify(context, null, 2)}\n\nQuestion: ${query}`;
     }
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${GEMINI_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -71,10 +71,10 @@ Guidelines:
     if (!response.ok) {
       if (response.status === 429) {
         return new Response(
-          JSON.stringify({ 
+          JSON.stringify({
             error: "Rate limit exceeded. Please try again in a moment.",
-            explanation: null 
-          }), 
+            explanation: null
+          }),
           {
             status: 429,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -83,10 +83,10 @@ Guidelines:
       }
       if (response.status === 402) {
         return new Response(
-          JSON.stringify({ 
+          JSON.stringify({
             error: "AI service requires payment. Please contact support.",
-            explanation: null 
-          }), 
+            explanation: null
+          }),
           {
             status: 402,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -105,12 +105,12 @@ Guidelines:
     console.log('Successfully generated explanation');
 
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: true,
         explanation,
         query,
         timestamp: new Date().toISOString()
-      }), 
+      }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
@@ -119,11 +119,11 @@ Guidelines:
   } catch (error) {
     console.error("Error in health-explainer function:", error);
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
         explanation: null
-      }), 
+      }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
