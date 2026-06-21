@@ -7,6 +7,7 @@ import {
   Mic,
   RotateCcw,
   ShieldCheck,
+  Square,
   Stethoscope,
   User,
   HeartPulse,
@@ -234,6 +235,8 @@ const LiveConversation = () => {
   const rafRef = useRef<number | null>(null);
   const segmentRecorderRef = useRef<MediaRecorder | null>(null);
   const segmentChunksRef = useRef<Blob[]>([]);
+  const finishingSegmentRef = useRef(false);
+  const finishSegmentRef = useRef<((options?: { allowTextFallback?: boolean }) => Promise<boolean>) | null>(null);
   const vadSpeakingRef = useRef(false);
   const vadLastSpeechRef = useRef(0);
   const vadSpeechStartRef = useRef<number | null>(null);
@@ -406,6 +409,8 @@ const LiveConversation = () => {
     } catch {
       /* noop */
     }
+    finishSegmentRef.current = null;
+    finishingSegmentRef.current = false;
     segmentRecorderRef.current = null;
     segmentChunksRef.current = [];
     vadSpeakingRef.current = false;
@@ -538,6 +543,27 @@ const LiveConversation = () => {
     [],
   );
 
+  const processTranscriptText = useCallback(
+    (speaker: Speaker, text: string) => {
+      const transcript = sanitizeSttText(text);
+      if (!isUsefulSttText(transcript)) return false;
+
+      if (speaker === "patient" && !doctorTurnCompletedRef.current) {
+        toast({
+          title: "Doctor speaks first",
+          description: "Translate the doctor's English turn before listening to the patient.",
+        });
+        return false;
+      }
+
+      liveInterimTextRef.current = transcript;
+      setLiveInterimText(transcript);
+      relayUtteranceToAgent(speaker, transcript);
+      return true;
+    },
+    [relayUtteranceToAgent],
+  );
+
   const processUtterance = useCallback(
     async (audio: Blob) => {
       if (!vadActiveRef.current || !agentSessionReadyRef.current || !conversationRef.current) {
@@ -563,10 +589,7 @@ const LiveConversation = () => {
         const serverTranscript = sanitizeSttText(await transcribeAudioBlob(audio, sttLanguage));
         const browserTranscript = sanitizeSttText(liveInterimTextRef.current);
         const transcript = isUsefulSttText(serverTranscript) ? serverTranscript : browserTranscript;
-        if (!isUsefulSttText(transcript)) return;
-        liveInterimTextRef.current = transcript;
-        setLiveInterimText(transcript);
-        relayUtteranceToAgent(speaker, transcript);
+        processTranscriptText(speaker, transcript);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Could not transcribe speech.";
         setError(message);
@@ -580,7 +603,7 @@ const LiveConversation = () => {
         setProcessingUtterance(false);
       }
     },
-    [relayUtteranceToAgent],
+    [processTranscriptText],
   );
 
   const startContinuousVad = useCallback(async () => {
@@ -609,23 +632,32 @@ const LiveConversation = () => {
     };
 
     const finishSegment = async () => {
+      if (finishingSegmentRef.current || processingUtteranceRef.current) return false;
       const recorder = segmentRecorderRef.current;
-      if (!recorder || recorder.state === "inactive") return;
+      if (!recorder || recorder.state === "inactive") return false;
 
-      await new Promise<void>((resolve) => {
-        recorder.onstop = () => resolve();
-        recorder.stop();
-      });
+      finishingSegmentRef.current = true;
 
-      segmentRecorderRef.current = null;
-      const audio = new Blob(segmentChunksRef.current, {
-        type: segmentChunksRef.current[0]?.type || "audio/webm",
-      });
-      segmentChunksRef.current = [];
+      try {
+        await new Promise<void>((resolve) => {
+          recorder.onstop = () => resolve();
+          recorder.stop();
+        });
 
-      if (audio.size < MIN_AUDIO_BYTES) return;
-      await processUtterance(audio);
+        segmentRecorderRef.current = null;
+        const audio = new Blob(segmentChunksRef.current, {
+          type: segmentChunksRef.current[0]?.type || "audio/webm",
+        });
+        segmentChunksRef.current = [];
+
+        if (audio.size < MIN_AUDIO_BYTES) return false;
+        await processUtterance(audio);
+        return true;
+      } finally {
+        finishingSegmentRef.current = false;
+      }
     };
+    finishSegmentRef.current = finishSegment;
 
     const AudioCtor =
       window.AudioContext ??
@@ -1074,6 +1106,44 @@ const LiveConversation = () => {
     }
   }, [sessionStatus, startContinuousVad, startElevenLabsSession, stopContinuousVad, vadListening]);
 
+  const finishCurrentSpeakerTurn = useCallback(async () => {
+    if (processingUtteranceRef.current || speakingTranslationRef.current || agentReplyExpectedRef.current) {
+      return;
+    }
+
+    if (!agentSessionReadyRef.current || !conversationRef.current) {
+      toast({
+        title: "Interpreter is still connecting",
+        description: "Wait until the live session is ready, then stop the speaker turn.",
+      });
+      return;
+    }
+
+    const speaker = selectedRef.current;
+    if (speaker === "patient" && !doctorTurnCompletedRef.current) {
+      toast({
+        title: "Doctor speaks first",
+        description: "Stop the doctor turn first so it can be translated for the patient.",
+      });
+      return;
+    }
+
+    vadSpeakingRef.current = false;
+    vadSpeechStartRef.current = null;
+
+    const submittedAudio = await finishSegmentRef.current?.();
+    if (submittedAudio) return;
+
+    if (processTranscriptText(speaker, liveInterimTextRef.current)) {
+      return;
+    }
+
+    toast({
+      title: `No ${speakerCopy[speaker].label.toLowerCase()} speech captured`,
+      description: `Speak as the ${speakerCopy[speaker].label.toLowerCase()}, then press Stop ${speakerCopy[speaker].label.toLowerCase()}.`,
+    });
+  }, [processTranscriptText]);
+
   const handleReset = useCallback(() => {
     setDoctorTurnCompleted(false);
     doctorTurnCompletedRef.current = false;
@@ -1241,6 +1311,7 @@ const LiveConversation = () => {
           onLanguageChange={selectPatientLanguage}
           switchSpeaker={switchSpeaker}
           onMicPress={beginLiveSession}
+          onStopSpeakerTurn={finishCurrentSpeakerTurn}
           waitingForDoctor={waitingForDoctor}
           doctorTurnCompleted={doctorTurnCompleted}
           vadListening={vadListening}
@@ -1300,8 +1371,8 @@ function EmptyChat({
             </p>
             <p className="text-lg leading-8 text-muted-foreground">
               {sessionStatus === "connected"
-                ? `Doctor speaks first in ${DOCTOR_LANGUAGE.label}. When they pause, the interpreter speaks to the patient in ${patientLanguage.label}. Mic stays live — no need to tap again.`
-                : "Pick a language, then tap the mic once. It stays live until you press reset."}
+                ? `Doctor speaks first in ${DOCTOR_LANGUAGE.label}. Press Stop doctor to translate and speak ${patientLanguage.label}, then press Stop patient to speak English back to the doctor.`
+                : `Pick a language, tap the mic once, speak as the doctor, then press Stop doctor to speak ${patientLanguage.label}; after the patient replies, press Stop patient to speak English to the doctor.`}
             </p>
           </div>
           <DoctorLanguageBadge />
@@ -1382,6 +1453,7 @@ function VoiceComposer({
   onLanguageChange,
   switchSpeaker,
   onMicPress,
+  onStopSpeakerTurn,
   waitingForDoctor,
   doctorTurnCompleted,
   vadListening,
@@ -1400,6 +1472,7 @@ function VoiceComposer({
   onLanguageChange: (code: string) => void;
   switchSpeaker: (speaker: Speaker) => void;
   onMicPress: () => void;
+  onStopSpeakerTurn: () => void;
   waitingForDoctor: boolean;
   doctorTurnCompleted: boolean;
   vadListening: boolean;
@@ -1411,6 +1484,7 @@ function VoiceComposer({
   const SelectedIcon = selected.icon;
   const disconnected = status === "disconnected";
   const micLive = sessionLive && vadListening;
+  const stoppingDisabled = processingUtterance || agentSpeaking;
   const direction = languageDirection(selectedSpeaker, patientLanguage);
   const statusLabel = processingUtterance
     ? "Live · transcribing"
@@ -1420,8 +1494,10 @@ function VoiceComposer({
         : "Live · speaking translation"
       : micLive
         ? waitingForDoctor
-          ? "Live · waiting for doctor (English)"
-          : "Live · always listening"
+          ? "Listening to doctor · stop to translate"
+          : selectedSpeaker === "patient"
+            ? "Listening to patient · stop to speak English"
+            : "Listening to doctor · stop to translate"
         : sessionLive
           ? "Live · connecting mic…"
           : statusText[status] ?? "Ready to start";
@@ -1434,15 +1510,21 @@ function VoiceComposer({
         : "Playing translation — mic stays live"
       : captionText || (
           disconnected
-            ? "Tap mic once — stays live until reset"
+            ? `Tap mic once — speak, then press Stop ${selected.label.toLowerCase()}`
             : waitingForDoctor
-              ? `Doctor speaks first (${DOCTOR_LANGUAGE.label}) — then patient hears ${patientLanguage.label}`
+              ? `Doctor speaks first (${DOCTOR_LANGUAGE.label}) — press Stop doctor to speak ${patientLanguage.label}`
               : micLive
-                ? `Always listening as ${selected.label} — just speak`
+                ? `Listening as ${selected.label} — press Stop ${selected.label.toLowerCase()} when they finish`
                 : sessionLive
                   ? "Connecting continuous microphone…"
                   : `Connecting for ${selected.label}…`
         );
+  const actionLabel = micLive
+    ? `Stop ${selected.label.toLowerCase()}`
+    : disconnected
+      ? "Start live"
+      : "Start live";
+  const ActionIcon = micLive ? Square : Mic;
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-7 z-30 px-5">
@@ -1504,16 +1586,20 @@ function VoiceComposer({
 
           <button
             type="button"
-            onClick={onMicPress}
-            disabled={status === "connecting" || micLive}
+            onClick={micLive ? onStopSpeakerTurn : onMicPress}
+            disabled={status === "connecting" || stoppingDisabled}
             className={cn(
-              "flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-full bg-card text-primary shadow-md ring-1 ring-primary/15",
-              micLive && "bg-primary text-white ring-2 ring-primary/30",
+              "flex h-16 flex-shrink-0 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold shadow-md ring-1 ring-primary/15",
+              micLive
+                ? "min-w-[10.5rem] bg-primary text-white ring-2 ring-primary/30"
+                : "w-16 bg-card text-primary",
+              (status === "connecting" || stoppingDisabled) && "cursor-not-allowed opacity-70",
               status === "connecting" && "animate-pulse",
             )}
-            aria-label={micLive ? "Microphone live" : "Start live interpreter"}
+            aria-label={micLive ? actionLabel : "Start live interpreter"}
           >
-            <Mic className="h-8 w-8" />
+            <ActionIcon className={cn(micLive ? "h-4 w-4" : "h-8 w-8")} />
+            {micLive && <span>{actionLabel}</span>}
           </button>
         </div>
 
