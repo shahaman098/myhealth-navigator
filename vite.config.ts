@@ -2,6 +2,7 @@ import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { buildKidsTtsPayload, SPONGEBOB_VOICE_SETTINGS } from "./api/kidsVoiceSettings.js";
+import { buildLiveTtsPayload } from "./api/liveVoiceSettings.js";
 import { fetchWithElevenLabsKeys, getElevenLabsApiKeys } from "./api/elevenLabsKeys.js";
 
 // Dev-only plugin: keeps provider API keys on the dev server.
@@ -297,6 +298,111 @@ function localAiDevPlugin(keys: {
           res.end(audio);
         } catch (err) {
           console.error("[kids-tts] error", err);
+          res.statusCode = 500;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({
+            error: err instanceof Error ? err.message : "Unknown error",
+          }));
+        }
+      });
+
+      server.middlewares.use("/api/live-tts", async (req, res) => {
+        if (req.method !== "POST") {
+          res.statusCode = 405;
+          res.end("Method Not Allowed");
+          return;
+        }
+        if (!keys.elevenLabsKeys?.length) {
+          res.statusCode = 500;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: "ELEVENLABS_API_KEY is not set in .env" }));
+          return;
+        }
+        if (!keys.elevenLabsAgentId) {
+          res.statusCode = 500;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: "ELEVENLABS_AGENT_ID is not set in .env" }));
+          return;
+        }
+
+        try {
+          const body = await readJson(req);
+          const text = String(body?.text ?? "").trim();
+          const language = String(body?.language ?? "en").trim() || "en";
+          const patientLanguageCode = String(
+            body?.patientLanguageCode ?? language,
+          )
+            .trim()
+            .toLowerCase();
+          if (!text) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "text is required" }));
+            return;
+          }
+
+          const agentId =
+            patientLanguageCode === "fr" && keys.elevenLabsAgentIdFr
+              ? keys.elevenLabsAgentIdFr
+              : keys.elevenLabsAgentId;
+          const { response: agentResponse } = await fetchWithElevenLabsKeys(
+            keys.elevenLabsKeys,
+            `https://api.elevenlabs.io/v1/convai/agents/${encodeURIComponent(agentId)}`,
+          );
+          if (!agentResponse.ok) {
+            const errText = await agentResponse.text().catch(() => "");
+            res.statusCode = agentResponse.status;
+            res.setHeader("Content-Type", "application/json");
+            res.end(
+              JSON.stringify({
+                error: `Could not load agent voice (${agentResponse.status})`,
+                detail: errText.slice(0, 500),
+              }),
+            );
+            return;
+          }
+          const agentData = await agentResponse.json();
+          const voiceId = agentData?.conversation_config?.tts?.voice_id;
+          if (!voiceId) {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "Interpreter voice_id not found on agent" }));
+            return;
+          }
+
+          const { response: upstream } = await fetchWithElevenLabsKeys(
+            keys.elevenLabsKeys,
+            `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "audio/mpeg",
+              },
+              body: JSON.stringify(buildLiveTtsPayload(text, language)),
+            },
+          );
+
+          if (!upstream.ok) {
+            const errText = await upstream.text().catch(() => "");
+            res.statusCode = upstream.status;
+            res.setHeader("Content-Type", "application/json");
+            res.end(
+              JSON.stringify({
+                error: `ElevenLabs live TTS error (${upstream.status})`,
+                detail: errText.slice(0, 500),
+              }),
+            );
+            return;
+          }
+
+          const audio = Buffer.from(await upstream.arrayBuffer());
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "audio/mpeg");
+          res.setHeader("Cache-Control", "no-store");
+          res.end(audio);
+        } catch (err) {
+          console.error("[live-tts] error", err);
           res.statusCode = 500;
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify({

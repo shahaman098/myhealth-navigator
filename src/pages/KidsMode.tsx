@@ -560,7 +560,10 @@ const KidsMode = () => {
   }, [busyTranslating, listening, speaking, voiceDirectory?.preview_url]);
 
   const handleLanguageChange = useCallback((code: string) => {
+    if (code === DOCTOR_LANGUAGE.code) return;
     setLanguageCode(code);
+    setActiveSpeaker("doctor");
+    activeSpeakerRef.current = "doctor";
   }, []);
 
   const endSession = useCallback(() => {

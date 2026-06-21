@@ -12,6 +12,9 @@
     "api/kids-tts.js": {
       "maxDuration": 30
     },
+    "api/live-tts.js": {
+      "maxDuration": 30
+    },
     "api/gemini-tts.js": {
       "maxDuration": 30
     },
