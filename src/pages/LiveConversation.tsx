@@ -832,7 +832,8 @@ const LiveConversation = () => {
 
       const conversation = await Conversation.startSession({
         signedUrl,
-        textOnly: false,
+        // Keep the agent text-only: the app plays exactly one translated voice via /api/live-tts.
+        textOnly: true,
         connectionType: "websocket",
         inputChunkDurationMs: 40,
         dynamicVariables: {
@@ -858,7 +859,7 @@ const LiveConversation = () => {
             return;
           }
           conversationRef.current = createdConversation;
-          createdConversation.setVolume({ volume: AGENT_OUTPUT_VOLUME });
+          createdConversation.setVolume({ volume: 0 });
         },
         onConnect: () => {
           if (runId !== sessionRunRef.current) return;
