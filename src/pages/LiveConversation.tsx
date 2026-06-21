@@ -404,15 +404,31 @@ const LiveConversation = () => {
     activateSpeakerMode(speaker);
   }, [activateSpeakerMode]);
 
-  const selectPatientLanguage = useCallback((code: string) => {
-    const nextLanguage = getLanguageByCode(code);
-    setPatientLanguage(nextLanguage);
-    patientLanguageRef.current = nextLanguage;
-    conversationRef.current?.sendContextualUpdate(
-      `Patient language set to ${nextLanguage.label} (${nextLanguage.nativeLabel}, ${nextLanguage.code}). Translate doctor English to ${nextLanguage.label} for the patient. Translate patient ${nextLanguage.label} to English for the doctor. Do not speak until someone talks. ${patientVoiceInstruction(nextLanguage)} ${patientVoiceLocaleInstruction(nextLanguage)}`,
-    );
-    applySpeakerMode(selectedRef.current);
-  }, [applySpeakerMode]);
+  const selectPatientLanguage = useCallback(
+    (code: string) => {
+      const nextLanguage = getLanguageByCode(code);
+      if (nextLanguage.code === patientLanguageRef.current.code) return;
+
+      setPatientLanguage(nextLanguage);
+      patientLanguageRef.current = nextLanguage;
+
+      const live = sessionStatus === "connected" || sessionStatus === "connecting";
+      if (live) {
+        void startElevenLabsSession();
+        toast({
+          title: `Patient language: ${nextLanguage.label}`,
+          description: "Reconnecting interpreter with the new language…",
+        });
+        return;
+      }
+
+      toast({
+        title: `Patient language: ${nextLanguage.label}`,
+        description: "Tap the mic when ready — interpreter will use this language.",
+      });
+    },
+    [sessionStatus, startElevenLabsSession],
+  );
 
   const toggleMic = useCallback(() => {
     const nextMuted = !micMuted;
@@ -479,7 +495,11 @@ const LiveConversation = () => {
 
         <main className="flex-1 overflow-y-auto px-0 pb-36 pt-10 md:px-16 lg:px-28">
           {transcript.length === 0 && !liveTurn ? (
-            <EmptyChat sessionStatus={sessionStatus} patientLanguage={patientLanguage} />
+            <EmptyChat
+              sessionStatus={sessionStatus}
+              patientLanguage={patientLanguage}
+              onLanguageChange={selectPatientLanguage}
+            />
           ) : (
             <div className="mx-auto flex max-w-6xl flex-col gap-16">
               {transcript.map((t) => (
@@ -524,6 +544,7 @@ const LiveConversation = () => {
           liveText={currentOriginal}
           selectedSpeaker={selectedSpeaker}
           patientLanguage={patientLanguage}
+          onLanguageChange={selectPatientLanguage}
           switchSpeaker={switchSpeaker}
           micMuted={micMuted}
           echoGuardActive={echoGuardActive}
@@ -538,9 +559,11 @@ const LiveConversation = () => {
 function EmptyChat({
   sessionStatus,
   patientLanguage,
+  onLanguageChange,
 }: {
   sessionStatus: Status;
   patientLanguage: FlowClearLanguage;
+  onLanguageChange: (code: string) => void;
 }) {
   return (
     <div className="mx-auto flex min-h-[46vh] max-w-3xl flex-col justify-center">
@@ -548,17 +571,24 @@ function EmptyChat({
         <div className="surface flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg text-primary">
           <HeartPulse className="h-7 w-7" />
         </div>
-        <div className="space-y-2">
-          <p className="text-[22px] leading-9 text-foreground">
-            {sessionStatus === "connected"
-              ? "Listening — speak when ready."
-              : "Choose your patient language."}
-          </p>
-          <p className="text-lg leading-8 text-muted-foreground">
-            {sessionStatus === "connected"
-              ? `Interpreter relay only: English for the doctor, ${patientLanguage.label} for the patient.`
-              : "Tap the mic to connect. The interpreter translates only — it will not speak on its own."}
-          </p>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-[22px] leading-9 text-foreground">
+              {sessionStatus === "connected"
+                ? "Listening — speak when ready."
+                : "Choose your patient language."}
+            </p>
+            <p className="text-lg leading-8 text-muted-foreground">
+              {sessionStatus === "connected"
+                ? `Interpreter relay only: English for the doctor, ${patientLanguage.label} for the patient.`
+                : "Pick a language below, then tap the mic to connect."}
+            </p>
+          </div>
+          <PatientLanguageSelect
+            value={patientLanguage}
+            onChange={onLanguageChange}
+            prominent
+          />
         </div>
       </div>
     </div>
@@ -568,23 +598,40 @@ function EmptyChat({
 function PatientLanguageSelect({
   value,
   onChange,
+  compact = false,
+  prominent = false,
 }: {
   value: FlowClearLanguage;
   onChange: (code: string) => void;
+  compact?: boolean;
+  prominent?: boolean;
 }) {
   return (
-    <div className="glass-pill hidden min-w-[210px] items-center gap-2 rounded-lg px-4 py-2 md:flex">
+    <div
+      className={cn(
+        "glass-pill flex items-center gap-2 rounded-lg px-4 py-2",
+        compact ? "min-w-0 flex-shrink-0" : "min-w-[210px]",
+        prominent && "max-w-md border border-primary/20 bg-white/80",
+      )}
+    >
       <Languages className="h-4 w-4 flex-shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-medium leading-4 text-muted-foreground">Patient language</p>
+        {!compact && (
+          <p className="text-[11px] font-medium leading-4 text-muted-foreground">Patient language</p>
+        )}
         <Select value={value.code} onValueChange={onChange}>
-          <SelectTrigger className="h-6 border-0 bg-transparent p-0 text-sm font-semibold text-foreground shadow-none ring-0 focus:ring-0 focus:ring-offset-0">
+          <SelectTrigger
+            className={cn(
+              "border-0 bg-transparent p-0 font-semibold text-foreground shadow-none ring-0 focus:ring-0 focus:ring-offset-0",
+              compact ? "h-8 text-sm" : "h-6 text-sm",
+            )}
+          >
             <SelectValue aria-label={value.label}>
-              {value.label}
+              {compact ? value.label : value.label}
             </SelectValue>
           </SelectTrigger>
           <SelectContent className="max-h-80">
-            {FLOWCLEAR_LANGUAGES.map((language) => (
+            {FLOWCLEAR_LANGUAGES.filter((language) => language.code !== "en").map((language) => (
               <SelectItem key={language.code} value={language.code}>
                 <span className="flex min-w-0 items-center gap-2">
                   <span>{language.label}</span>
@@ -606,6 +653,7 @@ function VoiceComposer({
   liveText,
   selectedSpeaker,
   patientLanguage,
+  onLanguageChange,
   switchSpeaker,
   micMuted,
   echoGuardActive,
@@ -618,6 +666,7 @@ function VoiceComposer({
   liveText: string;
   selectedSpeaker: Speaker;
   patientLanguage: FlowClearLanguage;
+  onLanguageChange: (code: string) => void;
   switchSpeaker: (speaker: Speaker) => void;
   micMuted: boolean;
   echoGuardActive: boolean;
@@ -640,7 +689,23 @@ function VoiceComposer({
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-7 z-30 px-5">
       <div className="pointer-events-auto mx-auto max-w-5xl">
-        <div className="glass-strong flex min-h-[86px] items-center gap-4 rounded-2xl px-5 py-3 md:px-6">
+        <div className="glass-strong flex min-h-[86px] flex-col gap-3 rounded-2xl px-5 py-3 md:flex-row md:items-center md:gap-4 md:px-6">
+          <div className="flex items-center justify-between gap-3 md:hidden">
+            <PatientLanguageSelect
+              value={patientLanguage}
+              onChange={onLanguageChange}
+              compact
+            />
+            <button
+              type="button"
+              onClick={() => switchSpeaker(selectedSpeaker === "doctor" ? "patient" : "doctor")}
+              className="inline-flex h-9 items-center gap-2 rounded-full bg-primary/10 px-3 text-xs font-semibold text-primary"
+            >
+              <Users className="h-3.5 w-3.5" />
+              {selected.label}
+            </button>
+          </div>
+
           <div className="min-w-0 flex-1">
             <div className="flex flex-col gap-2 md:flex-row md:items-center">
               <div className="flex min-w-0 flex-1 items-center gap-3">
