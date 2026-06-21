@@ -479,7 +479,7 @@ function stopCurrentAudio() {
 }
 
 export function isSpeechSynthesisSupported() {
-  return import.meta.env.DEV || isSupabaseConfigured();
+  return typeof window !== "undefined";
 }
 
 export function isSpeechRecognitionSupported() {
