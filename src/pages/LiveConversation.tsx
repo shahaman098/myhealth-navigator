@@ -81,6 +81,38 @@ const statusText: Record<string, string> = {
 
 const AGENT_OUTPUT_VOLUME = 0.72;
 
+type SpeechRecognitionAlternativeLike = {
+  transcript?: string;
+};
+
+type SpeechRecognitionResultLike = {
+  isFinal: boolean;
+  0?: SpeechRecognitionAlternativeLike;
+};
+
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: SpeechRecognitionResultLike;
+  };
+};
+
+type BrowserSpeechRecognition = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  onend: (() => void) | null;
+  onerror: ((event: { error?: string; message?: string }) => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  abort: () => void;
+  start: () => void;
+  stop: () => void;
+};
+
+type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+
 function nextSpeakerAfter(speaker: Speaker): Speaker {
   return speaker === "doctor" ? "patient" : "doctor";
 }
@@ -142,6 +174,36 @@ function patientVoiceLocaleInstruction(language: FlowClearLanguage) {
     : `Voice locale requirement: ${language.code}.`;
 }
 
+function speechRecognitionLocale(speaker: Speaker, language: FlowClearLanguage) {
+  if (speaker === "doctor") return "en-GB";
+  const locales: Record<string, string> = {
+    ar: "ar-SA",
+    bn: "bn-BD",
+    es: "es-ES",
+    fr: "fr-FR",
+    hi: "hi-IN",
+    pl: "pl-PL",
+    pt: "pt-PT",
+    ro: "ro-RO",
+    ru: "ru-RU",
+    so: "so-SO",
+    tr: "tr-TR",
+    uk: "uk-UA",
+    ur: "ur-PK",
+    zh: "zh-CN",
+  };
+  return locales[language.code] ?? language.code;
+}
+
+function getSpeechRecognitionCtor(): BrowserSpeechRecognitionConstructor | null {
+  if (typeof window === "undefined") return null;
+  const speechWindow = window as Window & {
+    SpeechRecognition?: BrowserSpeechRecognitionConstructor;
+    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
+  };
+  return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
+}
+
 const LiveConversation = () => {
   const navigate = useNavigate();
   const [selectedSpeaker, setSelectedSpeaker] = useState<Speaker>("doctor");
@@ -178,6 +240,13 @@ const LiveConversation = () => {
   const speakingTranslationRef = useRef(false);
   const playbackRef = useRef<HTMLAudioElement | null>(null);
   const playbackUrlRef = useRef<string | null>(null);
+  const liveRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const liveRecognitionWantedRef = useRef(false);
+  const liveRecognitionRestartRef = useRef<number | null>(null);
+  const liveFinalCaptionRef = useRef("");
+  const liveInterimTextRef = useRef("");
+  const [liveInterimText, setLiveInterimText] = useState("");
+  const [browserCaptioningSupported, setBrowserCaptioningSupported] = useState(true);
   const [vadListening, setVadListening] = useState(false);
   const [processingUtterance, setProcessingUtterance] = useState(false);
   doctorTurnCompletedRef.current = doctorTurnCompleted;
@@ -201,9 +270,133 @@ const LiveConversation = () => {
     [transcript],
   );
 
+  const clearLiveCaption = useCallback(() => {
+    liveFinalCaptionRef.current = "";
+    liveInterimTextRef.current = "";
+    setLiveInterimText("");
+  }, []);
+
+  const stopLiveTranscription = useCallback((options?: { clearCaption?: boolean }) => {
+    liveRecognitionWantedRef.current = false;
+    if (liveRecognitionRestartRef.current != null) {
+      window.clearTimeout(liveRecognitionRestartRef.current);
+      liveRecognitionRestartRef.current = null;
+    }
+
+    const recognition = liveRecognitionRef.current;
+    liveRecognitionRef.current = null;
+    if (recognition) {
+      recognition.onend = null;
+      recognition.onerror = null;
+      recognition.onresult = null;
+      try {
+        recognition.abort();
+      } catch {
+        /* noop */
+      }
+    }
+
+    if (options?.clearCaption ?? true) {
+      clearLiveCaption();
+    }
+  }, [clearLiveCaption]);
+
+  const startLiveTranscription = useCallback(() => {
+    if (liveRecognitionRef.current || !vadActiveRef.current) return;
+
+    const Recognition = getSpeechRecognitionCtor();
+    if (!Recognition) {
+      setBrowserCaptioningSupported(false);
+      return;
+    }
+
+    setBrowserCaptioningSupported(true);
+    liveRecognitionWantedRef.current = true;
+    liveFinalCaptionRef.current = "";
+
+    const recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    recognition.lang = speechRecognitionLocale(selectedRef.current, patientLanguageRef.current);
+
+    recognition.onresult = (event) => {
+      if (
+        !liveRecognitionWantedRef.current ||
+        speakingTranslationRef.current ||
+        agentReplyExpectedRef.current
+      ) {
+        return;
+      }
+
+      let finalCaption = liveFinalCaptionRef.current;
+      let interimCaption = "";
+
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const text = result?.[0]?.transcript?.trim() ?? "";
+        if (!text) continue;
+        if (result.isFinal) {
+          finalCaption = `${finalCaption} ${text}`.trim();
+        } else {
+          interimCaption = `${interimCaption} ${text}`.trim();
+        }
+      }
+
+      liveFinalCaptionRef.current = finalCaption;
+      const combinedCaption = sanitizeSttText(`${finalCaption} ${interimCaption}`);
+      if (!combinedCaption) return;
+
+      liveInterimTextRef.current = combinedCaption;
+      setLiveInterimText(combinedCaption);
+      setLiveDraft({
+        phase: processingUtteranceRef.current ? "transcribing" : "listening",
+        speaker: selectedRef.current,
+        original: combinedCaption,
+        translation: "",
+        confidence: 0,
+        turn: null,
+      });
+    };
+
+    recognition.onerror = (event) => {
+      const recognitionError = event.error ?? event.message ?? "";
+      if (recognitionError === "not-allowed" || recognitionError === "service-not-allowed") {
+        setBrowserCaptioningSupported(false);
+      }
+    };
+
+    recognition.onend = () => {
+      liveRecognitionRef.current = null;
+      if (!liveRecognitionWantedRef.current || !vadActiveRef.current) return;
+      if (liveRecognitionRestartRef.current != null) {
+        window.clearTimeout(liveRecognitionRestartRef.current);
+      }
+      liveRecognitionRestartRef.current = window.setTimeout(() => {
+        liveRecognitionRestartRef.current = null;
+        startLiveTranscription();
+      }, 250);
+    };
+
+    try {
+      recognition.start();
+      liveRecognitionRef.current = recognition;
+    } catch {
+      liveRecognitionWantedRef.current = false;
+    }
+  }, []);
+
+  const restartLiveTranscription = useCallback(() => {
+    if (!vadActiveRef.current) return;
+    stopLiveTranscription({ clearCaption: true });
+    liveRecognitionWantedRef.current = true;
+    startLiveTranscription();
+  }, [startLiveTranscription, stopLiveTranscription]);
+
   const stopContinuousVad = useCallback(() => {
     vadActiveRef.current = false;
     setVadListening(false);
+    stopLiveTranscription();
     if (rafRef.current != null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -222,7 +415,7 @@ const LiveConversation = () => {
     analyserRef.current = null;
     audioStreamRef.current?.getTracks().forEach((track) => track.stop());
     audioStreamRef.current = null;
-  }, []);
+  }, [stopLiveTranscription]);
 
   const stopPlayback = useCallback(() => {
     if (playbackRef.current) {
@@ -246,6 +439,7 @@ const LiveConversation = () => {
       if (!trimmed) return;
 
       stopPlayback();
+      stopLiveTranscription({ clearCaption: false });
       speakingTranslationRef.current = true;
       modeRef.current = "speaking";
       setMode("speaking");
@@ -298,9 +492,13 @@ const LiveConversation = () => {
         agentReplyExpectedRef.current = false;
         modeRef.current = "listening";
         setMode("listening");
+        if (vadActiveRef.current && liveSessionWantedRef.current) {
+          clearLiveCaption();
+          startLiveTranscription();
+        }
       }
     },
-    [stopPlayback],
+    [clearLiveCaption, startLiveTranscription, stopLiveTranscription, stopPlayback],
   );
 
   const relayUtteranceToAgent = useCallback(
@@ -362,8 +560,12 @@ const LiveConversation = () => {
       try {
         const sttLanguage =
           speaker === "doctor" ? DOCTOR_LANGUAGE.code : patientLanguageRef.current.code;
-        const transcript = sanitizeSttText(await transcribeAudioBlob(audio, sttLanguage));
+        const serverTranscript = sanitizeSttText(await transcribeAudioBlob(audio, sttLanguage));
+        const browserTranscript = sanitizeSttText(liveInterimTextRef.current);
+        const transcript = isUsefulSttText(serverTranscript) ? serverTranscript : browserTranscript;
         if (!isUsefulSttText(transcript)) return;
+        liveInterimTextRef.current = transcript;
+        setLiveInterimText(transcript);
         relayUtteranceToAgent(speaker, transcript);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Could not transcribe speech.";
@@ -391,6 +593,7 @@ const LiveConversation = () => {
     audioStreamRef.current = stream;
     vadActiveRef.current = true;
     setVadListening(true);
+    startLiveTranscription();
 
     const startSegmentRecorder = () => {
       if (!audioStreamRef.current || segmentRecorderRef.current || processingUtteranceRef.current) {
@@ -482,7 +685,7 @@ const LiveConversation = () => {
       rafRef.current = requestAnimationFrame(tick);
     };
     tick();
-  }, [processUtterance]);
+  }, [processUtterance, startLiveTranscription]);
 
   const applySpeakerMode = useCallback((speaker: Speaker) => {
     const doctorFirst = speaker === "doctor" && !doctorTurnCompletedRef.current;
@@ -497,9 +700,18 @@ const LiveConversation = () => {
     }
     setSelectedSpeaker(speaker);
     selectedRef.current = speaker;
+    clearLiveCaption();
     applySpeakerMode(speaker);
-    setLiveDraft({ phase: "listening", speaker });
-  }, [applySpeakerMode]);
+    setLiveDraft({
+      phase: "listening",
+      speaker,
+      original: "",
+      translation: "",
+      confidence: 0,
+      turn: null,
+    });
+    restartLiveTranscription();
+  }, [applySpeakerMode, clearLiveCaption, restartLiveTranscription]);
 
   const ensureDoctorSpeaker = useCallback(() => {
     setSelectedSpeaker("doctor");
@@ -534,7 +746,14 @@ const LiveConversation = () => {
     conversationRef.current = null;
     void conversation?.endSession().catch(() => undefined);
     setSessionStatus("disconnected");
-    setLiveDraft({ phase: "idle", speaker: selectedRef.current });
+    setLiveDraft({
+      phase: "idle",
+      speaker: selectedRef.current,
+      original: "",
+      translation: "",
+      confidence: 0,
+      turn: null,
+    });
   }, [clearReconnectTimer, stopContinuousVad, stopPlayback]);
 
   const startElevenLabsSession = useCallback(async (opts?: { preserveTurnState?: boolean }) => {
@@ -559,7 +778,15 @@ const LiveConversation = () => {
 
     setError("");
     setSessionStatus("connecting");
-    setLiveDraft({ phase: "listening", speaker: selectedRef.current });
+    clearLiveCaption();
+    setLiveDraft({
+      phase: "listening",
+      speaker: selectedRef.current,
+      original: "",
+      translation: "",
+      confidence: 0,
+      turn: null,
+    });
 
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -628,7 +855,14 @@ const LiveConversation = () => {
           if (runId !== sessionRunRef.current) return;
           agentSessionReadyRef.current = false;
           setSessionStatus("disconnected");
-          setLiveDraft({ phase: "idle", speaker: selectedRef.current });
+          setLiveDraft({
+            phase: "idle",
+            speaker: selectedRef.current,
+            original: "",
+            translation: "",
+            confidence: 0,
+            turn: null,
+          });
           if (!liveSessionWantedRef.current) {
             stopContinuousVad();
           }
@@ -708,7 +942,14 @@ const LiveConversation = () => {
           void speakLiveTranslation(translatedText, pending.translatedLang).finally(() => {
             if (runId !== sessionRunRef.current) return;
             advanceToNextSpeaker();
-            setLiveDraft({ phase: "listening", speaker: selectedRef.current });
+            setLiveDraft({
+              phase: "listening",
+              speaker: selectedRef.current,
+              original: "",
+              translation: "",
+              confidence: 0,
+              turn: null,
+            });
           });
         },
         onAgentChatResponsePart: ({ text }) => {
@@ -764,11 +1005,19 @@ const LiveConversation = () => {
       }
       setError(message);
       setSessionStatus("disconnected");
-      setLiveDraft({ phase: "idle", speaker: selectedRef.current });
+      setLiveDraft({
+        phase: "idle",
+        speaker: selectedRef.current,
+        original: "",
+        translation: "",
+        confidence: 0,
+        turn: null,
+      });
     }
   }, [
     advanceToNextSpeaker,
     applySpeakerMode,
+    clearLiveCaption,
     clearReconnectTimer,
     ensureDoctorSpeaker,
     speakLiveTranslation,
@@ -941,6 +1190,7 @@ const LiveConversation = () => {
               sessionStatus={sessionStatus}
               patientLanguage={patientLanguage}
               onLanguageChange={selectPatientLanguage}
+              browserCaptioningSupported={browserCaptioningSupported}
             />
           ) : (
             <div className="mx-auto flex max-w-6xl flex-col gap-16">
@@ -995,6 +1245,8 @@ const LiveConversation = () => {
           doctorTurnCompleted={doctorTurnCompleted}
           vadListening={vadListening}
           processingUtterance={processingUtterance}
+          browserCaptioningSupported={browserCaptioningSupported}
+          liveInterimText={liveInterimText}
         />
       </section>
     </div>
@@ -1026,10 +1278,12 @@ function EmptyChat({
   sessionStatus,
   patientLanguage,
   onLanguageChange,
+  browserCaptioningSupported,
 }: {
   sessionStatus: Status;
   patientLanguage: FlowClearLanguage;
   onLanguageChange: (code: string) => void;
+  browserCaptioningSupported: boolean;
 }) {
   return (
     <div className="mx-auto flex min-h-[46vh] max-w-3xl flex-col justify-center">
@@ -1056,6 +1310,11 @@ function EmptyChat({
             onChange={onLanguageChange}
             prominent
           />
+          {!browserCaptioningSupported && (
+            <p className="max-w-xl text-sm leading-6 text-muted-foreground">
+              Live captions are not available in this browser, but final transcription still runs after each pause.
+            </p>
+          )}
         </div>
       </div>
     </div>
@@ -1127,6 +1386,8 @@ function VoiceComposer({
   doctorTurnCompleted,
   vadListening,
   processingUtterance,
+  browserCaptioningSupported,
+  liveInterimText,
 }: {
   active: boolean;
   mode: Mode;
@@ -1143,6 +1404,8 @@ function VoiceComposer({
   doctorTurnCompleted: boolean;
   vadListening: boolean;
   processingUtterance: boolean;
+  browserCaptioningSupported: boolean;
+  liveInterimText: string;
 }) {
   const selected = speakerCopy[selectedSpeaker];
   const SelectedIcon = selected.icon;
@@ -1162,13 +1425,14 @@ function VoiceComposer({
         : sessionLive
           ? "Live · connecting mic…"
           : statusText[status] ?? "Ready to start";
+  const captionText = liveInterimText || liveText;
   const inputLabel = processingUtterance
     ? "Transcribing what you said…"
     : agentSpeaking
       ? waitingForDoctor
         ? `Speaking to patient (${patientLanguage.label})…`
         : "Playing translation — mic stays live"
-      : liveText || (
+      : captionText || (
           disconnected
             ? "Tap mic once — stays live until reset"
             : waitingForDoctor
@@ -1225,7 +1489,12 @@ function VoiceComposer({
             <div className="flex flex-col gap-2 md:flex-row md:items-center">
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <SelectedIcon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                <span className="truncate text-base text-muted-foreground">
+                <span
+                  className={cn(
+                    "min-w-0 text-base text-muted-foreground",
+                    captionText ? "line-clamp-2 whitespace-normal" : "truncate",
+                  )}
+                >
                   {inputLabel}
                 </span>
               </div>
@@ -1255,7 +1524,9 @@ function VoiceComposer({
           {micLive && (
             <>
               <span>—</span>
-              <span className="font-medium text-primary">Mic live</span>
+              <span className="font-medium text-primary">
+                {browserCaptioningSupported ? "Live captions on" : "Final captions only"}
+              </span>
             </>
           )}
         </div>
