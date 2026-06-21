@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 280" role="img" aria-label="SpongeBob mascot">
+  <defs>
+    <linearGradient id="spongeBody" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFE566"/>
+      <stop offset="100%" stop-color="#F4C430"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#6B4E9E" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <g filter="url(#softShadow)">
+    <rect x="48" y="36" width="144" height="168" rx="34" fill="url(#spongeBody)" stroke="#E6B422" stroke-width="3"/>
+    <circle cx="78" cy="72" r="8" fill="#E6B422" opacity="0.35"/>
+    <circle cx="162" cy="96" r="10" fill="#E6B422" opacity="0.35"/>
+    <circle cx="92" cy="170" r="9" fill="#E6B422" opacity="0.35"/>
+    <circle cx="150" cy="176" r="7" fill="#E6B422" opacity="0.35"/>
+    <ellipse cx="96" cy="118" rx="18" ry="24" fill="#FFFFFF" stroke="#2D2640" stroke-width="2.5"/>
+    <ellipse cx="144" cy="118" rx="18" ry="24" fill="#FFFFFF" stroke="#2D2640" stroke-width="2.5"/>
+    <circle cx="96" cy="122" r="7" fill="#2D2640"/>
+    <circle cx="144" cy="122" r="7" fill="#2D2640"/>
+    <circle cx="98" cy="120" r="2.5" fill="#FFFFFF"/>
+    <circle cx="146" cy="120" r="2.5" fill="#FFFFFF"/>
+    <ellipse cx="82" cy="142" rx="10" ry="6" fill="#F5A8B8" opacity="0.75"/>
+    <ellipse cx="158" cy="142" rx="10" ry="6" fill="#F5A8B8" opacity="0.75"/>
+    <path d="M102 152 Q120 170 138 152" fill="none" stroke="#2D2640" stroke-width="3" stroke-linecap="round"/>
+    <rect x="88" y="176" width="64" height="52" rx="16" fill="#FFFFFF" stroke="#E6B422" stroke-width="2"/>
+    <rect x="108" y="194" width="24" height="18" rx="8" fill="#6B4E9E" opacity="0.85"/>
+    <path d="M118 203 L126 203" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+    <path d="M120 198 L120 208" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  </g>
+</svg>

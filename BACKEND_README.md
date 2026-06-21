@@ -23,6 +23,7 @@ Required secrets (configured via Supabase):
 HEIDI_API_KEY          # Shared API key for Heidi API
 HEIDI_API_URL          # Base URL for Heidi API (e.g., https://api.heidi.health)
 HEIDI_JWT_SECRET       # Secret for generating JWT tokens
+ELEVENLABS_API_KEY     # ElevenLabs API key (if enabling text-to-speech)
 ```
 
 ## API Endpoints

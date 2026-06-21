@@ -3,6 +3,9 @@ project_id = "fybektdncodbaesynapd"
 [functions.health-chat]
 verify_jwt = false
 
+[functions.elevenlabs-signed-url]
+verify_jwt = false
+
 [functions.heidi-timeline]
 verify_jwt = false
 
@@ -19,4 +22,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.heidi-transcript]
+verify_jwt = false
+
+[functions.gemini-tts]
 verify_jwt = false
