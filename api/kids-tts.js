@@ -1,5 +1,6 @@
 import { buildKidsTtsPayload } from "./kidsVoiceSettings.js";
 import { fetchWithElevenLabsKeys, getElevenLabsApiKeysFromEnv } from "./elevenLabsKeys.js";
+import { readJsonBody } from "./readJsonBody.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -9,8 +10,6 @@ export default async function handler(req, res) {
 
   const apiKeys = getElevenLabsApiKeysFromEnv();
   const voiceId = process.env.ELEVENLABS_KIDS_VOICE_ID;
-  const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
-  const language = typeof req.body?.language === "string" ? req.body.language.trim() : "en";
 
   if (!apiKeys.length) {
     return res.status(500).json({ error: "ELEVENLABS_API_KEY is not configured" });
@@ -18,11 +17,16 @@ export default async function handler(req, res) {
   if (!voiceId) {
     return res.status(500).json({ error: "ELEVENLABS_KIDS_VOICE_ID is not configured" });
   }
-  if (!text) {
-    return res.status(400).json({ error: "text is required" });
-  }
 
   try {
+    const body = await readJsonBody(req);
+    const text = typeof body?.text === "string" ? body.text.trim() : "";
+    const language = typeof body?.language === "string" ? body.language.trim() : "en";
+
+    if (!text) {
+      return res.status(400).json({ error: "text is required" });
+    }
+
     const { response: upstream } = await fetchWithElevenLabsKeys(
       apiKeys,
       `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`,

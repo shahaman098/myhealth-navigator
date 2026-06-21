@@ -406,26 +406,41 @@ async function speakWithGemini(text: string): Promise<void> {
     throw new Error("No window");
   }
 
-  let blob: Blob;
-  if (import.meta.env.DEV) {
-    // Dev: use Vite middleware → API key never reaches the browser bundle.
-    const resp = await fetch("/api/gemini-tts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-    if (!resp.ok) {
-      const t = await resp.text().catch(() => "");
-      throw new Error(`gemini-tts ${resp.status} ${t.slice(0, 200)}`);
+  let blob: Blob | null = null;
+  let lastError: Error | null = null;
+
+  for (const endpoint of ["/api/gemini-tts", null] as const) {
+    try {
+      if (endpoint) {
+        const resp = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        if (!resp.ok) {
+          const t = await resp.text().catch(() => "");
+          throw new Error(`gemini-tts ${resp.status} ${t.slice(0, 200)}`);
+        }
+        blob = await resp.blob();
+        break;
+      }
+
+      if (!isSupabaseConfigured()) {
+        throw new Error("Supabase not configured");
+      }
+      blob = (await invokeFunction(
+        "gemini-tts",
+        { text },
+        { responseType: "blob" },
+      )) as Blob;
+      break;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
     }
-    blob = await resp.blob();
-  } else {
-    if (!isSupabaseConfigured()) throw new Error("Supabase not configured");
-    blob = (await invokeFunction(
-      "gemini-tts",
-      { text },
-      { responseType: "blob" },
-    )) as Blob;
+  }
+
+  if (!blob) {
+    throw lastError ?? new Error("Gemini TTS unavailable");
   }
 
   // Clean up any prior audio first.

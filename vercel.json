@@ -4,5 +4,19 @@
       "source": "/((?!api/.*).*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "functions": {
+    "api/kids-stt.js": {
+      "maxDuration": 60
+    },
+    "api/kids-tts.js": {
+      "maxDuration": 30
+    },
+    "api/gemini-tts.js": {
+      "maxDuration": 30
+    },
+    "api/elevenlabs-signed-url.js": {
+      "maxDuration": 15
+    }
+  }
 }

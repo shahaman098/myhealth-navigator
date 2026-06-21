@@ -1,4 +1,5 @@
 import { fetchWithElevenLabsKeys, getElevenLabsApiKeysFromEnv } from "./elevenLabsKeys.js";
+import { readJsonBody } from "./readJsonBody.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -9,14 +10,6 @@ export default async function handler(req, res) {
   const apiKeys = getElevenLabsApiKeysFromEnv();
   const defaultAgentId = process.env.ELEVENLABS_AGENT_ID;
   const frenchAgentId = process.env.ELEVENLABS_AGENT_ID_FR;
-  const patientLanguageCode =
-    typeof req.body?.patientLanguageCode === "string"
-      ? req.body.patientLanguageCode.toLowerCase()
-      : "";
-  const agentId =
-    patientLanguageCode === "fr" && frenchAgentId
-      ? frenchAgentId
-      : defaultAgentId;
 
   if (!apiKeys.length) {
     return res.status(500).json({ error: "ELEVENLABS_API_KEY is not configured" });
@@ -24,14 +17,25 @@ export default async function handler(req, res) {
   if (!defaultAgentId) {
     return res.status(500).json({ error: "ELEVENLABS_AGENT_ID is not configured" });
   }
-  if (patientLanguageCode === "fr" && !frenchAgentId) {
-    return res.status(500).json({
-      error:
-        "French accent agent is not configured. Set ELEVENLABS_AGENT_ID_FR to a French voice agent ID.",
-    });
-  }
 
   try {
+    const body = await readJsonBody(req);
+    const patientLanguageCode =
+      typeof body?.patientLanguageCode === "string"
+        ? body.patientLanguageCode.toLowerCase()
+        : "";
+    const agentId =
+      patientLanguageCode === "fr" && frenchAgentId
+        ? frenchAgentId
+        : defaultAgentId;
+
+    if (patientLanguageCode === "fr" && !frenchAgentId) {
+      return res.status(500).json({
+        error:
+          "French accent agent is not configured. Set ELEVENLABS_AGENT_ID_FR to a French voice agent ID.",
+      });
+    }
+
     const url = new URL("https://api.elevenlabs.io/v1/convai/conversation/get-signed-url");
     url.searchParams.set("agent_id", agentId);
 
