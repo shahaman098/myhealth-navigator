@@ -32,7 +32,8 @@ import {
 import { DOCTOR, PATIENT, Speaker, Turn } from "@/data/conversationData";
 import {
   DEFAULT_PATIENT_LANGUAGE,
-  FLOWCLEAR_LANGUAGES,
+  DOCTOR_LANGUAGE,
+  PATIENT_LANGUAGES,
   getLanguageByCode,
   type FlowClearLanguage,
 } from "@/data/languages";
@@ -46,10 +47,10 @@ const speakerCopy = {
     icon: Stethoscope,
     color: "266 76% 64%",
     sourceCode: DOCTOR.langCode,
-    sourceLanguage: "English",
+    sourceLanguage: DOCTOR_LANGUAGE.label,
     targetCode: "selected-patient-language",
     targetLanguage: "the patient's language",
-    direction: "Auto-detect -> Patient",
+    direction: `${DOCTOR_LANGUAGE.label} -> Patient`,
   },
   patient: {
     label: "Patient",
@@ -58,9 +59,9 @@ const speakerCopy = {
     color: "288 62% 62%",
     sourceCode: PATIENT.langCode,
     sourceLanguage: "any language the patient speaks",
-    targetCode: DOCTOR.langCode,
-    targetLanguage: "the clinician's language",
-    direction: "Auto-detect -> Clinician",
+    targetCode: DOCTOR_LANGUAGE.code,
+    targetLanguage: DOCTOR_LANGUAGE.label,
+    direction: `Patient -> ${DOCTOR_LANGUAGE.label}`,
   },
 } as const;
 
@@ -79,8 +80,8 @@ function nextSpeakerAfter(speaker: Speaker): Speaker {
 
 function languageDirection(speaker: Speaker, patientLanguage: FlowClearLanguage) {
   return speaker === "doctor"
-    ? `English -> ${patientLanguage.label}`
-    : `${patientLanguage.label} -> Doctor`;
+    ? `${DOCTOR_LANGUAGE.label} -> ${patientLanguage.label}`
+    : `${patientLanguage.label} -> ${DOCTOR_LANGUAGE.label}`;
 }
 
 function patientVoiceInstruction(language: FlowClearLanguage) {
@@ -108,8 +109,8 @@ function buildSpeakerInstruction(speaker: Speaker, language: FlowClearLanguage) 
   const meta = speakerCopy[speaker];
   const roleInstruction =
     speaker === "doctor"
-      ? `Active speaker: Doctor (English). Translate into ${language.label} for the patient only. ${patientVoiceInstruction(language)} ${patientVoiceLocaleInstruction(language)}`
-      : `Active speaker: Patient (${language.label}). Translate into English for the doctor only. ${DOCTOR_ENGLISH_VOICE_INSTRUCTION}`;
+      ? `Active speaker: Doctor (${DOCTOR_LANGUAGE.label}). Translate into ${language.label} for the patient only. ${patientVoiceInstruction(language)} ${patientVoiceLocaleInstruction(language)}`
+      : `Active speaker: Patient (${language.label}). Translate into ${DOCTOR_LANGUAGE.label} for the doctor only. ${DOCTOR_ENGLISH_VOICE_INSTRUCTION}`;
 
   return `${roleInstruction} Source: ${meta.sourceLanguage}. Target: ${meta.targetLanguage}. Relay only what was said. No greetings. No advice. No extra commentary.`;
 }
@@ -219,6 +220,8 @@ const LiveConversation = () => {
         dynamicVariables: {
           doctor_name: "Doctor",
           patient_name: "Patient",
+          doctor_language: DOCTOR_LANGUAGE.label,
+          doctor_language_code: DOCTOR_LANGUAGE.code,
           speaker_mode: speakerCopy[selectedRef.current].label,
           patient_language: patientLanguageRef.current.label,
           patient_language_native: patientLanguageRef.current.nativeLabel,
@@ -228,8 +231,8 @@ const LiveConversation = () => {
           doctor_english_voice_instruction: DOCTOR_ENGLISH_VOICE_INSTRUCTION,
           translation_direction:
             selectedRef.current === "doctor"
-              ? `The doctor speaks English. Translate English into ${patientLanguageRef.current.label} for the patient.`
-              : `The patient speaks ${patientLanguageRef.current.label}. Translate into English for the doctor.`,
+              ? `The doctor speaks ${DOCTOR_LANGUAGE.label}. Translate ${DOCTOR_LANGUAGE.label} into ${patientLanguageRef.current.label} for the patient.`
+              : `The patient speaks ${patientLanguageRef.current.label}. Translate into ${DOCTOR_LANGUAGE.label} for the doctor.`,
         },
         onConversationCreated: (createdConversation) => {
           if (runId !== sessionRunRef.current) {
@@ -301,8 +304,8 @@ const LiveConversation = () => {
             const draftTurn: Turn = {
               id: crypto.randomUUID(),
               speaker,
-              originalLang: speaker === "doctor" ? "en" : language.code,
-              translatedLang: speaker === "doctor" ? language.code : "en",
+              originalLang: speaker === "doctor" ? DOCTOR_LANGUAGE.code : language.code,
+              translatedLang: speaker === "doctor" ? language.code : DOCTOR_LANGUAGE.code,
               original: text,
               translated: "",
               confidence: 0,
@@ -460,7 +463,8 @@ const LiveConversation = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <DoctorLanguageBadge />
             <PatientLanguageSelect
               value={patientLanguage}
               onChange={selectPatientLanguage}
@@ -556,6 +560,18 @@ const LiveConversation = () => {
   );
 };
 
+function DoctorLanguageBadge() {
+  return (
+    <div className="glass-pill flex min-w-[170px] items-center gap-2 rounded-lg px-4 py-2">
+      <Stethoscope className="h-4 w-4 flex-shrink-0 text-primary" />
+      <div className="min-w-0">
+        <p className="text-[11px] font-medium leading-4 text-muted-foreground">Doctor language</p>
+        <p className="text-sm font-semibold text-foreground">{DOCTOR_LANGUAGE.label}</p>
+      </div>
+    </div>
+  );
+}
+
 function EmptyChat({
   sessionStatus,
   patientLanguage,
@@ -580,10 +596,11 @@ function EmptyChat({
             </p>
             <p className="text-lg leading-8 text-muted-foreground">
               {sessionStatus === "connected"
-                ? `Interpreter relay only: English for the doctor, ${patientLanguage.label} for the patient.`
+                ? `Interpreter relay only: ${DOCTOR_LANGUAGE.label} for the doctor, ${patientLanguage.label} for the patient.`
                 : "Pick a language below, then tap the mic to connect."}
             </p>
           </div>
+          <DoctorLanguageBadge />
           <PatientLanguageSelect
             value={patientLanguage}
             onChange={onLanguageChange}
@@ -631,7 +648,7 @@ function PatientLanguageSelect({
             </SelectValue>
           </SelectTrigger>
           <SelectContent className="max-h-80">
-            {FLOWCLEAR_LANGUAGES.filter((language) => language.code !== "en").map((language) => (
+            {PATIENT_LANGUAGES.map((language) => (
               <SelectItem key={language.code} value={language.code}>
                 <span className="flex min-w-0 items-center gap-2">
                   <span>{language.label}</span>

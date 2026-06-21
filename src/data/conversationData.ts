@@ -19,7 +19,7 @@ export interface Turn {
 export const DOCTOR = {
   name: "Dr Ahmed",
   role: "Discharge consultant",
-  language: "Auto-detect",
+  language: "English",
   langCode: "en" as Lang,
 };
 

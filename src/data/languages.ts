@@ -4,6 +4,12 @@ export type FlowClearLanguage = {
   nativeLabel: string;
 };
 
+export const DOCTOR_LANGUAGE: FlowClearLanguage = {
+  code: "en",
+  label: "English",
+  nativeLabel: "English",
+};
+
 export const FLOWCLEAR_LANGUAGES: FlowClearLanguage[] = [
   { code: "fr", label: "French", nativeLabel: "Français" },
   { code: "ru", label: "Russian", nativeLabel: "Русский" },
@@ -22,13 +28,18 @@ export const FLOWCLEAR_LANGUAGES: FlowClearLanguage[] = [
   { code: "so", label: "Somali", nativeLabel: "Soomaali" },
 ];
 
+export const PATIENT_LANGUAGES = FLOWCLEAR_LANGUAGES.filter(
+  (language) => language.code !== DOCTOR_LANGUAGE.code,
+);
+
 export const DEFAULT_PATIENT_LANGUAGE =
-  FLOWCLEAR_LANGUAGES.find((language) => language.code === "fr") ??
-  FLOWCLEAR_LANGUAGES[0];
+  PATIENT_LANGUAGES.find((language) => language.code === "fr") ??
+  PATIENT_LANGUAGES[0];
 
 export function getLanguageByCode(code: string): FlowClearLanguage {
+  if (code === DOCTOR_LANGUAGE.code) return DOCTOR_LANGUAGE;
   return (
-    FLOWCLEAR_LANGUAGES.find((language) => language.code === code) ??
+    PATIENT_LANGUAGES.find((language) => language.code === code) ??
     DEFAULT_PATIENT_LANGUAGE
   );
 }

@@ -11,7 +11,8 @@ import {
 } from "@/components/ui/select";
 import {
   DEFAULT_PATIENT_LANGUAGE,
-  FLOWCLEAR_LANGUAGES,
+  DOCTOR_LANGUAGE,
+  PATIENT_LANGUAGES,
   type FlowClearLanguage,
 } from "@/data/languages";
 import { cn } from "@/lib/utils";
@@ -170,7 +171,7 @@ const KidsMode = () => {
   const activeSpeakerRef = useRef<KidsSpeaker>("doctor");
 
   const patientLanguage = useMemo(
-    () => FLOWCLEAR_LANGUAGES.find((language) => language.code === languageCode) ?? DEFAULT_PATIENT_LANGUAGE,
+    () => PATIENT_LANGUAGES.find((language) => language.code === languageCode) ?? DEFAULT_PATIENT_LANGUAGE,
     [languageCode],
   );
 
@@ -259,8 +260,12 @@ const KidsMode = () => {
     async (englishText: string) => {
       const patientCode = patientLanguageCodeRef.current;
       const [translated, prefix] = await Promise.all([
-        patientCode === "en" ? englishText : translateText(englishText, "en", patientCode),
-        patientCode === "en" ? PATIENT_PREFIX : translateText(PATIENT_PREFIX, "en", patientCode),
+        patientCode === DOCTOR_LANGUAGE.code
+          ? englishText
+          : translateText(englishText, DOCTOR_LANGUAGE.code, patientCode),
+        patientCode === DOCTOR_LANGUAGE.code
+          ? PATIENT_PREFIX
+          : translateText(PATIENT_PREFIX, DOCTOR_LANGUAGE.code, patientCode),
       ]);
       const spoken = `${prefix} ${translated}`;
       setTurns((prev) => [
@@ -291,7 +296,7 @@ const KidsMode = () => {
           spokenTo: "doctor",
         },
       ]);
-      await speak(spoken, "en", "doctor");
+      await speak(spoken, DOCTOR_LANGUAGE.code, "doctor");
     },
     [speak],
   );
@@ -300,7 +305,7 @@ const KidsMode = () => {
     async (audio: Blob) => {
       const speaker = activeSpeakerRef.current;
       const patientCode = patientLanguageCodeRef.current;
-      const sttLanguage = speaker === "doctor" ? "en" : patientCode;
+      const sttLanguage = speaker === "doctor" ? DOCTOR_LANGUAGE.code : patientCode;
 
       setBusyTranslating(true);
       setInterimText("Processing…");
@@ -328,11 +333,13 @@ const KidsMode = () => {
 
         if (speaker === "doctor") {
           const patientOut =
-            patientCode === "en" ? transcript : await translateText(transcript, "en", patientCode);
+            patientCode === DOCTOR_LANGUAGE.code
+              ? transcript
+              : await translateText(transcript, DOCTOR_LANGUAGE.code, patientCode);
           setTranslatedText(patientOut);
           await relayToPatient(transcript);
         } else {
-          const englishOut = await translateText(transcript, patientCode, "en");
+          const englishOut = await translateText(transcript, patientCode, DOCTOR_LANGUAGE.code);
           setTranslatedText(englishOut);
           await relayToDoctor(transcript, englishOut);
         }
@@ -522,7 +529,7 @@ const KidsMode = () => {
     setActiveSpeaker("doctor");
     activeSpeakerRef.current = "doctor";
     void startContinuousListening();
-    await speak(DOCTOR_GREETING, "en", "doctor");
+    await speak(DOCTOR_GREETING, DOCTOR_LANGUAGE.code, "doctor");
     activeSpeakerRef.current = "doctor";
     setActiveSpeaker("doctor");
   }, [sessionStarted, speak, startContinuousListening, speaking, voiceReady]);
@@ -566,15 +573,15 @@ const KidsMode = () => {
   const statusLine = useMemo(() => {
     if (speaking) {
       return speakingTo === "doctor"
-        ? `${voiceLabel} speaking to the doctor (English)…`
+        ? `${voiceLabel} speaking to the doctor (${DOCTOR_LANGUAGE.label})…`
         : `${voiceLabel} speaking to the patient (${patientLanguage.label})…`;
     }
     if (busyTranslating) return "Translating…";
     if (listening) {
       return activeSpeaker === "doctor"
         ? audioLevel > 0.05
-          ? "Doctor speaking (English) — keep talking"
-          : "Listening for the doctor (English)…"
+          ? `Doctor speaking (${DOCTOR_LANGUAGE.label}) — keep talking`
+          : `Listening for the doctor (${DOCTOR_LANGUAGE.label})…`
         : audioLevel > 0.05
           ? `Patient speaking (${patientLanguage.label}) — keep talking`
           : `Listening for the patient (${patientLanguage.label})…`;
@@ -640,24 +647,30 @@ const KidsMode = () => {
             <div>
               <h2 className="text-lg font-semibold text-foreground">Translation room</h2>
               <p className="text-sm text-muted-foreground">
-                Doctor ↔ patient · {patientLanguage.label}
+                Doctor ({DOCTOR_LANGUAGE.label}) ↔ patient ({patientLanguage.label})
               </p>
             </div>
 
-            <div className="glass-pill flex min-w-[210px] items-center gap-2 rounded-full px-4 py-2">
-              <Languages className="h-4 w-4 text-primary" />
-              <Select value={languageCode} onValueChange={handleLanguageChange}>
-                <SelectTrigger className="h-7 border-0 bg-transparent p-0 text-sm font-semibold text-foreground shadow-none focus:ring-0 focus:ring-offset-0">
-                  <SelectValue aria-label={patientLanguage.label}>{patientLanguage.label}</SelectValue>
-                </SelectTrigger>
-                <SelectContent className="max-h-80">
-                  {FLOWCLEAR_LANGUAGES.map((language: FlowClearLanguage) => (
-                    <SelectItem key={language.code} value={language.code}>
-                      {language.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="glass-pill flex items-center gap-2 rounded-full px-4 py-2">
+                <Stethoscope className="h-4 w-4 text-primary" />
+                <span className="text-sm font-semibold text-foreground">{DOCTOR_LANGUAGE.label}</span>
+              </div>
+              <div className="glass-pill flex min-w-[210px] items-center gap-2 rounded-full px-4 py-2">
+                <Languages className="h-4 w-4 text-primary" />
+                <Select value={languageCode} onValueChange={handleLanguageChange}>
+                  <SelectTrigger className="h-7 border-0 bg-transparent p-0 text-sm font-semibold text-foreground shadow-none focus:ring-0 focus:ring-offset-0">
+                    <SelectValue aria-label={patientLanguage.label}>{patientLanguage.label}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="max-h-80">
+                    {PATIENT_LANGUAGES.map((language: FlowClearLanguage) => (
+                      <SelectItem key={language.code} value={language.code}>
+                        {language.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
@@ -696,7 +709,7 @@ const KidsMode = () => {
             <div className="kids-transcript-bubble space-y-3">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  Heard · {lastTurnSpeaker === "doctor" ? "Doctor (English)" : lastTurnSpeaker === "patient" ? `Patient (${patientLanguage.label})` : activeSpeaker === "doctor" ? "Doctor" : "Patient"}
+                  Heard · {lastTurnSpeaker === "doctor" ? `Doctor (${DOCTOR_LANGUAGE.label})` : lastTurnSpeaker === "patient" ? `Patient (${patientLanguage.label})` : activeSpeaker === "doctor" ? `Doctor (${DOCTOR_LANGUAGE.label})` : "Patient"}
                 </p>
                 <p className="mt-1 text-sm text-foreground">
                   {heardText || <span className="italic text-muted-foreground">{interimText || "…"}</span>}
@@ -707,7 +720,7 @@ const KidsMode = () => {
                   <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                     {lastTurnSpeaker === "doctor"
                       ? `SpongeBob → patient (${patientLanguage.label})`
-                      : "SpongeBob → doctor (English)"}
+                      : `SpongeBob → doctor (${DOCTOR_LANGUAGE.label})`}
                   </p>
                   <p className="mt-1 text-sm font-medium text-foreground">{translatedText}</p>
                 </div>
