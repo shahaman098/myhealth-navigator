@@ -971,7 +971,9 @@ const LiveConversation = () => {
 
           void speakLiveTranslation(translatedText, pending.translatedLang).finally(() => {
             if (runId !== sessionRunRef.current) return;
-            advanceToNextSpeaker();
+            pendingNextSpeakerRef.current = null;
+            playbackFinishedAwaitingFinalRef.current = false;
+            activateSpeakerMode(nextSpeaker);
             setLiveDraft({
               phase: "listening",
               speaker: selectedRef.current,
@@ -1047,6 +1049,7 @@ const LiveConversation = () => {
   }, [
     advanceToNextSpeaker,
     applySpeakerMode,
+    activateSpeakerMode,
     clearLiveCaption,
     clearReconnectTimer,
     ensureDoctorSpeaker,
@@ -1117,7 +1120,13 @@ const LiveConversation = () => {
       return;
     }
 
-    const speaker = selectedRef.current;
+    let speaker = selectedRef.current;
+    const lastSavedSpeaker = transcript[transcript.length - 1]?.speaker;
+    if (speaker === "doctor" && doctorTurnCompletedRef.current && lastSavedSpeaker === "doctor") {
+      activateSpeakerMode("patient");
+      speaker = "patient";
+    }
+
     if (speaker === "patient" && !doctorTurnCompletedRef.current) {
       toast({
         title: "Doctor speaks first",
@@ -1140,7 +1149,7 @@ const LiveConversation = () => {
       title: `No ${speakerCopy[speaker].label.toLowerCase()} speech captured`,
       description: `Speak as the ${speakerCopy[speaker].label.toLowerCase()}, then press Stop ${speakerCopy[speaker].label.toLowerCase()}.`,
     });
-  }, [processTranscriptText]);
+  }, [activateSpeakerMode, processTranscriptText, transcript]);
 
   const handleReset = useCallback(() => {
     setDoctorTurnCompleted(false);
