@@ -235,6 +235,7 @@ const LiveConversation = () => {
   const rafRef = useRef<number | null>(null);
   const segmentRecorderRef = useRef<MediaRecorder | null>(null);
   const segmentChunksRef = useRef<Blob[]>([]);
+  const startSegmentRef = useRef<(() => void) | null>(null);
   const finishingSegmentRef = useRef(false);
   const finishSegmentRef = useRef<((options?: { allowTextFallback?: boolean }) => Promise<boolean>) | null>(null);
   const vadSpeakingRef = useRef(false);
@@ -409,6 +410,7 @@ const LiveConversation = () => {
     } catch {
       /* noop */
     }
+    startSegmentRef.current = null;
     finishSegmentRef.current = null;
     finishingSegmentRef.current = false;
     segmentRecorderRef.current = null;
@@ -630,6 +632,7 @@ const LiveConversation = () => {
       };
       recorder.start();
     };
+    startSegmentRef.current = startSegmentRecorder;
 
     const finishSegment = async () => {
       if (finishingSegmentRef.current || processingUtteranceRef.current) return false;
@@ -695,12 +698,12 @@ const LiveConversation = () => {
       const isSpeech = rms > VAD_SPEECH_THRESHOLD;
 
       if (!paused) {
+        startSegmentRecorder();
         if (isSpeech) {
           vadLastSpeechRef.current = now;
           if (!vadSpeakingRef.current) {
             vadSpeakingRef.current = true;
             vadSpeechStartRef.current = now;
-            startSegmentRecorder();
           }
         } else if (vadSpeakingRef.current) {
           const silenceDuration = now - vadLastSpeechRef.current;
@@ -743,6 +746,9 @@ const LiveConversation = () => {
       turn: null,
     });
     restartLiveTranscription();
+    if (agentSessionReadyRef.current && modeRef.current !== "speaking") {
+      startSegmentRef.current?.();
+    }
   }, [applySpeakerMode, clearLiveCaption, restartLiveTranscription]);
 
   const ensureDoctorSpeaker = useCallback(() => {
