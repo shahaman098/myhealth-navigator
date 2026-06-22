@@ -134,6 +134,60 @@ function nextSpeaker(speaker: KidsSpeaker): KidsSpeaker {
   return speaker === "doctor" ? "patient" : "doctor";
 }
 
+function mergeFloat32Chunks(chunks: Float32Array[]): Float32Array {
+  const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
+  const merged = new Float32Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return merged;
+}
+
+function floatTo16BitPcm(input: Float32Array): Int16Array {
+  const output = new Int16Array(input.length);
+  for (let i = 0; i < input.length; i++) {
+    const sample = Math.max(-1, Math.min(1, input[i]));
+    output[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+  }
+  return output;
+}
+
+function writeAscii(view: DataView, offset: number, value: string) {
+  for (let i = 0; i < value.length; i++) {
+    view.setUint8(offset + i, value.charCodeAt(i));
+  }
+}
+
+function encodeWav(samples: Float32Array, sampleRate: number): Blob {
+  const pcm = floatTo16BitPcm(samples);
+  const buffer = new ArrayBuffer(44 + pcm.length * 2);
+  const view = new DataView(buffer);
+
+  writeAscii(view, 0, "RIFF");
+  view.setUint32(4, 36 + pcm.length * 2, true);
+  writeAscii(view, 8, "WAVE");
+  writeAscii(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeAscii(view, 36, "data");
+  view.setUint32(40, pcm.length * 2, true);
+
+  let offset = 44;
+  for (let i = 0; i < pcm.length; i++) {
+    view.setInt16(offset, pcm[i], true);
+    offset += 2;
+  }
+
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
 const KidsMode = () => {
   const [languageCode, setLanguageCode] = useState(DEFAULT_PATIENT_LANGUAGE.code);
   const [activeSpeaker, setActiveSpeaker] = useState<KidsSpeaker>("doctor");
@@ -161,6 +215,11 @@ const KidsMode = () => {
   const vadLastSpeechRef = useRef(0);
   const segmentRecorderRef = useRef<MediaRecorder | null>(null);
   const segmentChunksRef = useRef<Blob[]>([]);
+  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const silentGainRef = useRef<GainNode | null>(null);
+  const pcmChunksRef = useRef<Float32Array[]>([]);
+  const customRecordingRef = useRef(false);
+  const customSampleRateRef = useRef(44100);
   const audioStreamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -180,7 +239,16 @@ const KidsMode = () => {
   speakingRef.current = speaking;
   busyRef.current = busyTranslating;
 
-  const canRecord = typeof window !== "undefined" && "MediaRecorder" in window;
+  const hasMediaRecorder = typeof window !== "undefined" && "MediaRecorder" in window;
+  const hasWebAudioRecorder =
+    typeof window !== "undefined" &&
+    !!navigator.mediaDevices?.getUserMedia &&
+    !!(
+      (window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext })
+        .AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    );
+  const canRecord = hasMediaRecorder || hasWebAudioRecorder;
 
   useEffect(() => {
     document.title = "Kids Mode · MyHealth Navigator";
@@ -211,6 +279,12 @@ const KidsMode = () => {
       } catch {
         /* noop */
       }
+      customRecordingRef.current = false;
+      scriptProcessorRef.current?.disconnect();
+      scriptProcessorRef.current = null;
+      silentGainRef.current?.disconnect();
+      silentGainRef.current = null;
+      pcmChunksRef.current = [];
       audioCtxRef.current?.close().catch(() => undefined);
       audioStreamRef.current?.getTracks().forEach((t) => t.stop());
     };
@@ -378,6 +452,12 @@ const KidsMode = () => {
     }
     segmentRecorderRef.current = null;
     segmentChunksRef.current = [];
+    customRecordingRef.current = false;
+    pcmChunksRef.current = [];
+    scriptProcessorRef.current?.disconnect();
+    scriptProcessorRef.current = null;
+    silentGainRef.current?.disconnect();
+    silentGainRef.current = null;
     vadSpeakingRef.current = false;
     vadSpeechStartRef.current = null;
     audioCtxRef.current?.close().catch(() => undefined);
@@ -395,7 +475,7 @@ const KidsMode = () => {
         description: "Try Chrome or Edge for seamless translation.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
     if (typeof window !== "undefined" && !window.isSecureContext) {
@@ -404,10 +484,10 @@ const KidsMode = () => {
         description: "Microphone needs HTTPS or http://localhost.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
-    if (liveActiveRef.current) return;
+    if (liveActiveRef.current) return true;
 
     let stream: MediaStream;
     try {
@@ -418,7 +498,7 @@ const KidsMode = () => {
         description: err instanceof Error ? err.message : "Please allow microphone access.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
     audioStreamRef.current = stream;
@@ -429,32 +509,52 @@ const KidsMode = () => {
     setTranslatedText("");
 
     const startSegmentRecorder = () => {
-      if (!audioStreamRef.current || segmentRecorderRef.current || processingRef.current) return;
+      if (!audioStreamRef.current || processingRef.current) return;
+      if (hasMediaRecorder && segmentRecorderRef.current) return;
+      if (!hasMediaRecorder && customRecordingRef.current) return;
+
       segmentChunksRef.current = [];
-      const recorder = new MediaRecorder(audioStreamRef.current);
-      segmentRecorderRef.current = recorder;
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) segmentChunksRef.current.push(event.data);
-      };
-      recorder.start();
+      pcmChunksRef.current = [];
+
+      if (hasMediaRecorder) {
+        const recorder = new MediaRecorder(audioStreamRef.current);
+        segmentRecorderRef.current = recorder;
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) segmentChunksRef.current.push(event.data);
+        };
+        recorder.start();
+        return;
+      }
+
+      customSampleRateRef.current = audioCtxRef.current?.sampleRate ?? 44100;
+      customRecordingRef.current = true;
     };
 
     const finishSegment = async () => {
       const recorder = segmentRecorderRef.current;
-      if (!recorder || recorder.state === "inactive") return;
+      let audio: Blob | null = null;
 
-      await new Promise<void>((resolve) => {
-        recorder.onstop = () => resolve();
-        recorder.stop();
-      });
+      if (recorder && recorder.state !== "inactive") {
+        await new Promise<void>((resolve) => {
+          recorder.onstop = () => resolve();
+          recorder.stop();
+        });
 
-      segmentRecorderRef.current = null;
-      const audio = new Blob(segmentChunksRef.current, {
-        type: segmentChunksRef.current[0]?.type || "audio/webm",
-      });
-      segmentChunksRef.current = [];
+        segmentRecorderRef.current = null;
+        audio = new Blob(segmentChunksRef.current, {
+          type: segmentChunksRef.current[0]?.type || "audio/webm",
+        });
+        segmentChunksRef.current = [];
+      } else if (customRecordingRef.current) {
+        customRecordingRef.current = false;
+        const samples = mergeFloat32Chunks(pcmChunksRef.current);
+        pcmChunksRef.current = [];
+        audio = encodeWav(samples, customSampleRateRef.current);
+      } else {
+        return;
+      }
 
-      if (audio.size < MIN_AUDIO_BYTES) return;
+      if (!audio || audio.size < MIN_AUDIO_BYTES) return;
 
       processingRef.current = true;
       try {
@@ -476,6 +576,21 @@ const KidsMode = () => {
         analyser.fftSize = 512;
         source.connect(analyser);
         analyserRef.current = analyser;
+        if (!hasMediaRecorder) {
+          const processor = ctx.createScriptProcessor(4096, 1, 1);
+          processor.onaudioprocess = (event) => {
+            if (!customRecordingRef.current) return;
+            const input = event.inputBuffer.getChannelData(0);
+            pcmChunksRef.current.push(new Float32Array(input));
+          };
+          const silentGain = ctx.createGain();
+          silentGain.gain.value = 0;
+          source.connect(processor);
+          processor.connect(silentGain);
+          silentGain.connect(ctx.destination);
+          scriptProcessorRef.current = processor;
+          silentGainRef.current = silentGain;
+        }
 
         const data = new Uint8Array(analyser.frequencyBinCount);
         const tick = () => {
@@ -521,14 +636,19 @@ const KidsMode = () => {
     } catch (err) {
       console.warn("[KidsMode] audio meter failed:", err);
     }
-  }, [canRecord, processAutoUtterance]);
+    return true;
+  }, [canRecord, hasMediaRecorder, processAutoUtterance]);
 
   const startSession = useCallback(async () => {
     if (!voiceReady || speaking || sessionStarted) return;
-    setSessionStarted(true);
     setActiveSpeaker("doctor");
     activeSpeakerRef.current = "doctor";
-    void startContinuousListening();
+    const microphoneReady = await startContinuousListening();
+    if (!microphoneReady) {
+      setSessionStarted(false);
+      return;
+    }
+    setSessionStarted(true);
     await speak(DOCTOR_GREETING, DOCTOR_LANGUAGE.code, "doctor");
     activeSpeakerRef.current = "doctor";
     setActiveSpeaker("doctor");

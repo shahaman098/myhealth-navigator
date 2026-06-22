@@ -258,10 +258,10 @@ export function saveLiveTurn(turn: Turn) {
       { ...turn, savedAt: nowIso(), approval: "pending" },
     ],
     currentSpeaker: turn.speaker,
-    currentOriginal: turn.original,
-    currentTranslation: turn.translated,
-    currentTurn: turn,
-    currentConfidence: turn.confidence,
+    currentOriginal: "",
+    currentTranslation: "",
+    currentTurn: null,
+    currentConfidence: 0,
     phase: "idle",
   }));
   logAudit(

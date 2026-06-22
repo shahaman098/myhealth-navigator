@@ -7,6 +7,7 @@ import {
   Mic,
   RotateCcw,
   ShieldCheck,
+  Square,
   Stethoscope,
   User,
   HeartPulse,
@@ -81,6 +82,38 @@ const statusText: Record<string, string> = {
 
 const AGENT_OUTPUT_VOLUME = 0.72;
 
+type SpeechRecognitionAlternativeLike = {
+  transcript?: string;
+};
+
+type SpeechRecognitionResultLike = {
+  isFinal: boolean;
+  0?: SpeechRecognitionAlternativeLike;
+};
+
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: SpeechRecognitionResultLike;
+  };
+};
+
+type BrowserSpeechRecognition = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  onend: (() => void) | null;
+  onerror: ((event: { error?: string; message?: string }) => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  abort: () => void;
+  start: () => void;
+  stop: () => void;
+};
+
+type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+
 function nextSpeakerAfter(speaker: Speaker): Speaker {
   return speaker === "doctor" ? "patient" : "doctor";
 }
@@ -142,6 +175,36 @@ function patientVoiceLocaleInstruction(language: FlowClearLanguage) {
     : `Voice locale requirement: ${language.code}.`;
 }
 
+function speechRecognitionLocale(speaker: Speaker, language: FlowClearLanguage) {
+  if (speaker === "doctor") return "en-GB";
+  const locales: Record<string, string> = {
+    ar: "ar-SA",
+    bn: "bn-BD",
+    es: "es-ES",
+    fr: "fr-FR",
+    hi: "hi-IN",
+    pl: "pl-PL",
+    pt: "pt-PT",
+    ro: "ro-RO",
+    ru: "ru-RU",
+    so: "so-SO",
+    tr: "tr-TR",
+    uk: "uk-UA",
+    ur: "ur-PK",
+    zh: "zh-CN",
+  };
+  return locales[language.code] ?? language.code;
+}
+
+function getSpeechRecognitionCtor(): BrowserSpeechRecognitionConstructor | null {
+  if (typeof window === "undefined") return null;
+  const speechWindow = window as Window & {
+    SpeechRecognition?: BrowserSpeechRecognitionConstructor;
+    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
+  };
+  return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
+}
+
 const LiveConversation = () => {
   const navigate = useNavigate();
   const [selectedSpeaker, setSelectedSpeaker] = useState<Speaker>("doctor");
@@ -172,12 +235,22 @@ const LiveConversation = () => {
   const rafRef = useRef<number | null>(null);
   const segmentRecorderRef = useRef<MediaRecorder | null>(null);
   const segmentChunksRef = useRef<Blob[]>([]);
+  const startSegmentRef = useRef<(() => void) | null>(null);
+  const finishingSegmentRef = useRef(false);
+  const finishSegmentRef = useRef<((options?: { allowTextFallback?: boolean }) => Promise<boolean>) | null>(null);
   const vadSpeakingRef = useRef(false);
   const vadLastSpeechRef = useRef(0);
   const vadSpeechStartRef = useRef<number | null>(null);
   const speakingTranslationRef = useRef(false);
   const playbackRef = useRef<HTMLAudioElement | null>(null);
   const playbackUrlRef = useRef<string | null>(null);
+  const liveRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const liveRecognitionWantedRef = useRef(false);
+  const liveRecognitionRestartRef = useRef<number | null>(null);
+  const liveFinalCaptionRef = useRef("");
+  const liveInterimTextRef = useRef("");
+  const [liveInterimText, setLiveInterimText] = useState("");
+  const [browserCaptioningSupported, setBrowserCaptioningSupported] = useState(true);
   const [vadListening, setVadListening] = useState(false);
   const [processingUtterance, setProcessingUtterance] = useState(false);
   doctorTurnCompletedRef.current = doctorTurnCompleted;
@@ -201,9 +274,133 @@ const LiveConversation = () => {
     [transcript],
   );
 
+  const clearLiveCaption = useCallback(() => {
+    liveFinalCaptionRef.current = "";
+    liveInterimTextRef.current = "";
+    setLiveInterimText("");
+  }, []);
+
+  const stopLiveTranscription = useCallback((options?: { clearCaption?: boolean }) => {
+    liveRecognitionWantedRef.current = false;
+    if (liveRecognitionRestartRef.current != null) {
+      window.clearTimeout(liveRecognitionRestartRef.current);
+      liveRecognitionRestartRef.current = null;
+    }
+
+    const recognition = liveRecognitionRef.current;
+    liveRecognitionRef.current = null;
+    if (recognition) {
+      recognition.onend = null;
+      recognition.onerror = null;
+      recognition.onresult = null;
+      try {
+        recognition.abort();
+      } catch {
+        /* noop */
+      }
+    }
+
+    if (options?.clearCaption ?? true) {
+      clearLiveCaption();
+    }
+  }, [clearLiveCaption]);
+
+  const startLiveTranscription = useCallback(() => {
+    if (liveRecognitionRef.current || !vadActiveRef.current) return;
+
+    const Recognition = getSpeechRecognitionCtor();
+    if (!Recognition) {
+      setBrowserCaptioningSupported(false);
+      return;
+    }
+
+    setBrowserCaptioningSupported(true);
+    liveRecognitionWantedRef.current = true;
+    liveFinalCaptionRef.current = "";
+
+    const recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    recognition.lang = speechRecognitionLocale(selectedRef.current, patientLanguageRef.current);
+
+    recognition.onresult = (event) => {
+      if (
+        !liveRecognitionWantedRef.current ||
+        speakingTranslationRef.current ||
+        agentReplyExpectedRef.current
+      ) {
+        return;
+      }
+
+      let finalCaption = liveFinalCaptionRef.current;
+      let interimCaption = "";
+
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const text = result?.[0]?.transcript?.trim() ?? "";
+        if (!text) continue;
+        if (result.isFinal) {
+          finalCaption = `${finalCaption} ${text}`.trim();
+        } else {
+          interimCaption = `${interimCaption} ${text}`.trim();
+        }
+      }
+
+      liveFinalCaptionRef.current = finalCaption;
+      const combinedCaption = sanitizeSttText(`${finalCaption} ${interimCaption}`);
+      if (!combinedCaption) return;
+
+      liveInterimTextRef.current = combinedCaption;
+      setLiveInterimText(combinedCaption);
+      setLiveDraft({
+        phase: processingUtteranceRef.current ? "transcribing" : "listening",
+        speaker: selectedRef.current,
+        original: combinedCaption,
+        translation: "",
+        confidence: 0,
+        turn: null,
+      });
+    };
+
+    recognition.onerror = (event) => {
+      const recognitionError = event.error ?? event.message ?? "";
+      if (recognitionError === "not-allowed" || recognitionError === "service-not-allowed") {
+        setBrowserCaptioningSupported(false);
+      }
+    };
+
+    recognition.onend = () => {
+      liveRecognitionRef.current = null;
+      if (!liveRecognitionWantedRef.current || !vadActiveRef.current) return;
+      if (liveRecognitionRestartRef.current != null) {
+        window.clearTimeout(liveRecognitionRestartRef.current);
+      }
+      liveRecognitionRestartRef.current = window.setTimeout(() => {
+        liveRecognitionRestartRef.current = null;
+        startLiveTranscription();
+      }, 250);
+    };
+
+    try {
+      recognition.start();
+      liveRecognitionRef.current = recognition;
+    } catch {
+      liveRecognitionWantedRef.current = false;
+    }
+  }, []);
+
+  const restartLiveTranscription = useCallback(() => {
+    if (!vadActiveRef.current) return;
+    stopLiveTranscription({ clearCaption: true });
+    liveRecognitionWantedRef.current = true;
+    startLiveTranscription();
+  }, [startLiveTranscription, stopLiveTranscription]);
+
   const stopContinuousVad = useCallback(() => {
     vadActiveRef.current = false;
     setVadListening(false);
+    stopLiveTranscription();
     if (rafRef.current != null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -213,6 +410,9 @@ const LiveConversation = () => {
     } catch {
       /* noop */
     }
+    startSegmentRef.current = null;
+    finishSegmentRef.current = null;
+    finishingSegmentRef.current = false;
     segmentRecorderRef.current = null;
     segmentChunksRef.current = [];
     vadSpeakingRef.current = false;
@@ -222,7 +422,7 @@ const LiveConversation = () => {
     analyserRef.current = null;
     audioStreamRef.current?.getTracks().forEach((track) => track.stop());
     audioStreamRef.current = null;
-  }, []);
+  }, [stopLiveTranscription]);
 
   const stopPlayback = useCallback(() => {
     if (playbackRef.current) {
@@ -246,6 +446,7 @@ const LiveConversation = () => {
       if (!trimmed) return;
 
       stopPlayback();
+      stopLiveTranscription({ clearCaption: false });
       speakingTranslationRef.current = true;
       modeRef.current = "speaking";
       setMode("speaking");
@@ -298,9 +499,13 @@ const LiveConversation = () => {
         agentReplyExpectedRef.current = false;
         modeRef.current = "listening";
         setMode("listening");
+        if (vadActiveRef.current && liveSessionWantedRef.current) {
+          clearLiveCaption();
+          startLiveTranscription();
+        }
       }
     },
-    [stopPlayback],
+    [clearLiveCaption, startLiveTranscription, stopLiveTranscription, stopPlayback],
   );
 
   const relayUtteranceToAgent = useCallback(
@@ -340,6 +545,27 @@ const LiveConversation = () => {
     [],
   );
 
+  const processTranscriptText = useCallback(
+    (speaker: Speaker, text: string) => {
+      const transcript = sanitizeSttText(text);
+      if (!isUsefulSttText(transcript)) return false;
+
+      if (speaker === "patient" && !doctorTurnCompletedRef.current) {
+        toast({
+          title: "Doctor speaks first",
+          description: "Translate the doctor's English turn before listening to the patient.",
+        });
+        return false;
+      }
+
+      liveInterimTextRef.current = transcript;
+      setLiveInterimText(transcript);
+      relayUtteranceToAgent(speaker, transcript);
+      return true;
+    },
+    [relayUtteranceToAgent],
+  );
+
   const processUtterance = useCallback(
     async (audio: Blob) => {
       if (!vadActiveRef.current || !agentSessionReadyRef.current || !conversationRef.current) {
@@ -362,9 +588,10 @@ const LiveConversation = () => {
       try {
         const sttLanguage =
           speaker === "doctor" ? DOCTOR_LANGUAGE.code : patientLanguageRef.current.code;
-        const transcript = sanitizeSttText(await transcribeAudioBlob(audio, sttLanguage));
-        if (!isUsefulSttText(transcript)) return;
-        relayUtteranceToAgent(speaker, transcript);
+        const serverTranscript = sanitizeSttText(await transcribeAudioBlob(audio, sttLanguage));
+        const browserTranscript = sanitizeSttText(liveInterimTextRef.current);
+        const transcript = isUsefulSttText(serverTranscript) ? serverTranscript : browserTranscript;
+        processTranscriptText(speaker, transcript);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Could not transcribe speech.";
         setError(message);
@@ -378,7 +605,7 @@ const LiveConversation = () => {
         setProcessingUtterance(false);
       }
     },
-    [relayUtteranceToAgent],
+    [processTranscriptText],
   );
 
   const startContinuousVad = useCallback(async () => {
@@ -391,6 +618,7 @@ const LiveConversation = () => {
     audioStreamRef.current = stream;
     vadActiveRef.current = true;
     setVadListening(true);
+    startLiveTranscription();
 
     const startSegmentRecorder = () => {
       if (!audioStreamRef.current || segmentRecorderRef.current || processingUtteranceRef.current) {
@@ -404,25 +632,35 @@ const LiveConversation = () => {
       };
       recorder.start();
     };
+    startSegmentRef.current = startSegmentRecorder;
 
     const finishSegment = async () => {
+      if (finishingSegmentRef.current || processingUtteranceRef.current) return false;
       const recorder = segmentRecorderRef.current;
-      if (!recorder || recorder.state === "inactive") return;
+      if (!recorder || recorder.state === "inactive") return false;
 
-      await new Promise<void>((resolve) => {
-        recorder.onstop = () => resolve();
-        recorder.stop();
-      });
+      finishingSegmentRef.current = true;
 
-      segmentRecorderRef.current = null;
-      const audio = new Blob(segmentChunksRef.current, {
-        type: segmentChunksRef.current[0]?.type || "audio/webm",
-      });
-      segmentChunksRef.current = [];
+      try {
+        await new Promise<void>((resolve) => {
+          recorder.onstop = () => resolve();
+          recorder.stop();
+        });
 
-      if (audio.size < MIN_AUDIO_BYTES) return;
-      await processUtterance(audio);
+        segmentRecorderRef.current = null;
+        const audio = new Blob(segmentChunksRef.current, {
+          type: segmentChunksRef.current[0]?.type || "audio/webm",
+        });
+        segmentChunksRef.current = [];
+
+        if (audio.size < MIN_AUDIO_BYTES) return false;
+        await processUtterance(audio);
+        return true;
+      } finally {
+        finishingSegmentRef.current = false;
+      }
     };
+    finishSegmentRef.current = finishSegment;
 
     const AudioCtor =
       window.AudioContext ??
@@ -460,12 +698,12 @@ const LiveConversation = () => {
       const isSpeech = rms > VAD_SPEECH_THRESHOLD;
 
       if (!paused) {
+        startSegmentRecorder();
         if (isSpeech) {
           vadLastSpeechRef.current = now;
           if (!vadSpeakingRef.current) {
             vadSpeakingRef.current = true;
             vadSpeechStartRef.current = now;
-            startSegmentRecorder();
           }
         } else if (vadSpeakingRef.current) {
           const silenceDuration = now - vadLastSpeechRef.current;
@@ -482,7 +720,7 @@ const LiveConversation = () => {
       rafRef.current = requestAnimationFrame(tick);
     };
     tick();
-  }, [processUtterance]);
+  }, [processUtterance, startLiveTranscription]);
 
   const applySpeakerMode = useCallback((speaker: Speaker) => {
     const doctorFirst = speaker === "doctor" && !doctorTurnCompletedRef.current;
@@ -497,9 +735,21 @@ const LiveConversation = () => {
     }
     setSelectedSpeaker(speaker);
     selectedRef.current = speaker;
+    clearLiveCaption();
     applySpeakerMode(speaker);
-    setLiveDraft({ phase: "listening", speaker });
-  }, [applySpeakerMode]);
+    setLiveDraft({
+      phase: "listening",
+      speaker,
+      original: "",
+      translation: "",
+      confidence: 0,
+      turn: null,
+    });
+    restartLiveTranscription();
+    if (agentSessionReadyRef.current && modeRef.current !== "speaking") {
+      startSegmentRef.current?.();
+    }
+  }, [applySpeakerMode, clearLiveCaption, restartLiveTranscription]);
 
   const ensureDoctorSpeaker = useCallback(() => {
     setSelectedSpeaker("doctor");
@@ -534,7 +784,14 @@ const LiveConversation = () => {
     conversationRef.current = null;
     void conversation?.endSession().catch(() => undefined);
     setSessionStatus("disconnected");
-    setLiveDraft({ phase: "idle", speaker: selectedRef.current });
+    setLiveDraft({
+      phase: "idle",
+      speaker: selectedRef.current,
+      original: "",
+      translation: "",
+      confidence: 0,
+      turn: null,
+    });
   }, [clearReconnectTimer, stopContinuousVad, stopPlayback]);
 
   const startElevenLabsSession = useCallback(async (opts?: { preserveTurnState?: boolean }) => {
@@ -559,7 +816,15 @@ const LiveConversation = () => {
 
     setError("");
     setSessionStatus("connecting");
-    setLiveDraft({ phase: "listening", speaker: selectedRef.current });
+    clearLiveCaption();
+    setLiveDraft({
+      phase: "listening",
+      speaker: selectedRef.current,
+      original: "",
+      translation: "",
+      confidence: 0,
+      turn: null,
+    });
 
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -573,7 +838,8 @@ const LiveConversation = () => {
 
       const conversation = await Conversation.startSession({
         signedUrl,
-        textOnly: false,
+        // Keep the agent text-only: the app plays exactly one translated voice via /api/live-tts.
+        textOnly: true,
         connectionType: "websocket",
         inputChunkDurationMs: 40,
         dynamicVariables: {
@@ -599,13 +865,11 @@ const LiveConversation = () => {
             return;
           }
           conversationRef.current = createdConversation;
-          createdConversation.setVolume({ volume: AGENT_OUTPUT_VOLUME });
         },
         onConnect: () => {
           if (runId !== sessionRunRef.current) return;
           agentSessionReadyRef.current = true;
           setSessionStatus("connected");
-          conversationRef.current?.setMicMuted(true);
           conversationRef.current?.sendContextualUpdate(INTERPRETER_SYSTEM_PROMPT);
           conversationRef.current?.sendContextualUpdate(
             `Interpreter mode only. Doctor language is always ${DOCTOR_LANGUAGE.label} (${DOCTOR_LANGUAGE.code}). Patient language: ${patientLanguageRef.current.label} (${patientLanguageRef.current.code}). The doctor speaks FIRST in English. After the doctor stops, speak the translation aloud to the patient in ${patientLanguageRef.current.label} only. Then wait for the patient. No greetings on connect.`,
@@ -628,7 +892,14 @@ const LiveConversation = () => {
           if (runId !== sessionRunRef.current) return;
           agentSessionReadyRef.current = false;
           setSessionStatus("disconnected");
-          setLiveDraft({ phase: "idle", speaker: selectedRef.current });
+          setLiveDraft({
+            phase: "idle",
+            speaker: selectedRef.current,
+            original: "",
+            translation: "",
+            confidence: 0,
+            turn: null,
+          });
           if (!liveSessionWantedRef.current) {
             stopContinuousVad();
           }
@@ -657,7 +928,6 @@ const LiveConversation = () => {
         onModeChange: ({ mode: nextMode }) => {
           if (runId !== sessionRunRef.current) return;
           const previousMode = modeRef.current;
-          conversationRef.current?.setMicMuted(true);
           setMode(nextMode);
           modeRef.current = nextMode;
 
@@ -707,8 +977,17 @@ const LiveConversation = () => {
 
           void speakLiveTranslation(translatedText, pending.translatedLang).finally(() => {
             if (runId !== sessionRunRef.current) return;
-            advanceToNextSpeaker();
-            setLiveDraft({ phase: "listening", speaker: selectedRef.current });
+            pendingNextSpeakerRef.current = null;
+            playbackFinishedAwaitingFinalRef.current = false;
+            activateSpeakerMode(nextSpeaker);
+            setLiveDraft({
+              phase: "listening",
+              speaker: selectedRef.current,
+              original: "",
+              translation: "",
+              confidence: 0,
+              turn: null,
+            });
           });
         },
         onAgentChatResponsePart: ({ text }) => {
@@ -764,11 +1043,20 @@ const LiveConversation = () => {
       }
       setError(message);
       setSessionStatus("disconnected");
-      setLiveDraft({ phase: "idle", speaker: selectedRef.current });
+      setLiveDraft({
+        phase: "idle",
+        speaker: selectedRef.current,
+        original: "",
+        translation: "",
+        confidence: 0,
+        turn: null,
+      });
     }
   }, [
     advanceToNextSpeaker,
     applySpeakerMode,
+    activateSpeakerMode,
+    clearLiveCaption,
     clearReconnectTimer,
     ensureDoctorSpeaker,
     speakLiveTranslation,
@@ -824,6 +1112,50 @@ const LiveConversation = () => {
       });
     }
   }, [sessionStatus, startContinuousVad, startElevenLabsSession, stopContinuousVad, vadListening]);
+
+  const finishCurrentSpeakerTurn = useCallback(async () => {
+    if (processingUtteranceRef.current || speakingTranslationRef.current || agentReplyExpectedRef.current) {
+      return;
+    }
+
+    if (!agentSessionReadyRef.current || !conversationRef.current) {
+      toast({
+        title: "Interpreter is still connecting",
+        description: "Wait until the live session is ready, then stop the speaker turn.",
+      });
+      return;
+    }
+
+    let speaker = selectedRef.current;
+    const lastSavedSpeaker = transcript[transcript.length - 1]?.speaker;
+    if (speaker === "doctor" && doctorTurnCompletedRef.current && lastSavedSpeaker === "doctor") {
+      activateSpeakerMode("patient");
+      speaker = "patient";
+    }
+
+    if (speaker === "patient" && !doctorTurnCompletedRef.current) {
+      toast({
+        title: "Doctor speaks first",
+        description: "Stop the doctor turn first so it can be translated for the patient.",
+      });
+      return;
+    }
+
+    vadSpeakingRef.current = false;
+    vadSpeechStartRef.current = null;
+
+    const submittedAudio = await finishSegmentRef.current?.();
+    if (submittedAudio) return;
+
+    if (processTranscriptText(speaker, liveInterimTextRef.current)) {
+      return;
+    }
+
+    toast({
+      title: `No ${speakerCopy[speaker].label.toLowerCase()} speech captured`,
+      description: `Speak as the ${speakerCopy[speaker].label.toLowerCase()}, then press Stop ${speakerCopy[speaker].label.toLowerCase()}.`,
+    });
+  }, [activateSpeakerMode, processTranscriptText, transcript]);
 
   const handleReset = useCallback(() => {
     setDoctorTurnCompleted(false);
@@ -941,6 +1273,7 @@ const LiveConversation = () => {
               sessionStatus={sessionStatus}
               patientLanguage={patientLanguage}
               onLanguageChange={selectPatientLanguage}
+              browserCaptioningSupported={browserCaptioningSupported}
             />
           ) : (
             <div className="mx-auto flex max-w-6xl flex-col gap-16">
@@ -991,10 +1324,13 @@ const LiveConversation = () => {
           onLanguageChange={selectPatientLanguage}
           switchSpeaker={switchSpeaker}
           onMicPress={beginLiveSession}
+          onStopSpeakerTurn={finishCurrentSpeakerTurn}
           waitingForDoctor={waitingForDoctor}
           doctorTurnCompleted={doctorTurnCompleted}
           vadListening={vadListening}
           processingUtterance={processingUtterance}
+          browserCaptioningSupported={browserCaptioningSupported}
+          liveInterimText={liveInterimText}
         />
       </section>
     </div>
@@ -1026,10 +1362,12 @@ function EmptyChat({
   sessionStatus,
   patientLanguage,
   onLanguageChange,
+  browserCaptioningSupported,
 }: {
   sessionStatus: Status;
   patientLanguage: FlowClearLanguage;
   onLanguageChange: (code: string) => void;
+  browserCaptioningSupported: boolean;
 }) {
   return (
     <div className="mx-auto flex min-h-[46vh] max-w-3xl flex-col justify-center">
@@ -1046,8 +1384,8 @@ function EmptyChat({
             </p>
             <p className="text-lg leading-8 text-muted-foreground">
               {sessionStatus === "connected"
-                ? `Doctor speaks first in ${DOCTOR_LANGUAGE.label}. When they pause, the interpreter speaks to the patient in ${patientLanguage.label}. Mic stays live — no need to tap again.`
-                : "Pick a language, then tap the mic once. It stays live until you press reset."}
+                ? `Doctor speaks first in ${DOCTOR_LANGUAGE.label}. Press Stop doctor to translate and speak ${patientLanguage.label}, then press Stop patient to speak English back to the doctor.`
+                : `Pick a language, tap the mic once, speak as the doctor, then press Stop doctor to speak ${patientLanguage.label}; after the patient replies, press Stop patient to speak English to the doctor.`}
             </p>
           </div>
           <DoctorLanguageBadge />
@@ -1056,6 +1394,11 @@ function EmptyChat({
             onChange={onLanguageChange}
             prominent
           />
+          {!browserCaptioningSupported && (
+            <p className="max-w-xl text-sm leading-6 text-muted-foreground">
+              Live captions are not available in this browser, but final transcription still runs after each pause.
+            </p>
+          )}
         </div>
       </div>
     </div>
@@ -1123,10 +1466,13 @@ function VoiceComposer({
   onLanguageChange,
   switchSpeaker,
   onMicPress,
+  onStopSpeakerTurn,
   waitingForDoctor,
   doctorTurnCompleted,
   vadListening,
   processingUtterance,
+  browserCaptioningSupported,
+  liveInterimText,
 }: {
   active: boolean;
   mode: Mode;
@@ -1139,15 +1485,19 @@ function VoiceComposer({
   onLanguageChange: (code: string) => void;
   switchSpeaker: (speaker: Speaker) => void;
   onMicPress: () => void;
+  onStopSpeakerTurn: () => void;
   waitingForDoctor: boolean;
   doctorTurnCompleted: boolean;
   vadListening: boolean;
   processingUtterance: boolean;
+  browserCaptioningSupported: boolean;
+  liveInterimText: string;
 }) {
   const selected = speakerCopy[selectedSpeaker];
   const SelectedIcon = selected.icon;
   const disconnected = status === "disconnected";
   const micLive = sessionLive && vadListening;
+  const stoppingDisabled = processingUtterance || agentSpeaking;
   const direction = languageDirection(selectedSpeaker, patientLanguage);
   const statusLabel = processingUtterance
     ? "Live · transcribing"
@@ -1157,28 +1507,37 @@ function VoiceComposer({
         : "Live · speaking translation"
       : micLive
         ? waitingForDoctor
-          ? "Live · waiting for doctor (English)"
-          : "Live · always listening"
+          ? "Listening to doctor · stop to translate"
+          : selectedSpeaker === "patient"
+            ? "Listening to patient · stop to speak English"
+            : "Listening to doctor · stop to translate"
         : sessionLive
           ? "Live · connecting mic…"
           : statusText[status] ?? "Ready to start";
+  const captionText = liveInterimText || liveText;
   const inputLabel = processingUtterance
     ? "Transcribing what you said…"
     : agentSpeaking
       ? waitingForDoctor
         ? `Speaking to patient (${patientLanguage.label})…`
         : "Playing translation — mic stays live"
-      : liveText || (
+      : captionText || (
           disconnected
-            ? "Tap mic once — stays live until reset"
+            ? `Tap mic once — speak, then press Stop ${selected.label.toLowerCase()}`
             : waitingForDoctor
-              ? `Doctor speaks first (${DOCTOR_LANGUAGE.label}) — then patient hears ${patientLanguage.label}`
+              ? `Doctor speaks first (${DOCTOR_LANGUAGE.label}) — press Stop doctor to speak ${patientLanguage.label}`
               : micLive
-                ? `Always listening as ${selected.label} — just speak`
+                ? `Listening as ${selected.label} — press Stop ${selected.label.toLowerCase()} when they finish`
                 : sessionLive
                   ? "Connecting continuous microphone…"
                   : `Connecting for ${selected.label}…`
         );
+  const actionLabel = micLive
+    ? `Stop ${selected.label.toLowerCase()}`
+    : disconnected
+      ? "Start live"
+      : "Start live";
+  const ActionIcon = micLive ? Square : Mic;
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-7 z-30 px-5">
@@ -1225,7 +1584,12 @@ function VoiceComposer({
             <div className="flex flex-col gap-2 md:flex-row md:items-center">
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <SelectedIcon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                <span className="truncate text-base text-muted-foreground">
+                <span
+                  className={cn(
+                    "min-w-0 text-base text-muted-foreground",
+                    captionText ? "line-clamp-2 whitespace-normal" : "truncate",
+                  )}
+                >
                   {inputLabel}
                 </span>
               </div>
@@ -1235,16 +1599,20 @@ function VoiceComposer({
 
           <button
             type="button"
-            onClick={onMicPress}
-            disabled={status === "connecting" || micLive}
+            onClick={micLive ? onStopSpeakerTurn : onMicPress}
+            disabled={status === "connecting" || stoppingDisabled}
             className={cn(
-              "flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-full bg-card text-primary shadow-md ring-1 ring-primary/15",
-              micLive && "bg-primary text-white ring-2 ring-primary/30",
+              "flex h-16 flex-shrink-0 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold shadow-md ring-1 ring-primary/15",
+              micLive
+                ? "min-w-[10.5rem] bg-primary text-white ring-2 ring-primary/30"
+                : "w-16 bg-card text-primary",
+              (status === "connecting" || stoppingDisabled) && "cursor-not-allowed opacity-70",
               status === "connecting" && "animate-pulse",
             )}
-            aria-label={micLive ? "Microphone live" : "Start live interpreter"}
+            aria-label={micLive ? actionLabel : "Start live interpreter"}
           >
-            <Mic className="h-8 w-8" />
+            <ActionIcon className={cn(micLive ? "h-4 w-4" : "h-8 w-8")} />
+            {micLive && <span>{actionLabel}</span>}
           </button>
         </div>
 
@@ -1255,7 +1623,9 @@ function VoiceComposer({
           {micLive && (
             <>
               <span>—</span>
-              <span className="font-medium text-primary">Mic live</span>
+              <span className="font-medium text-primary">
+                {browserCaptioningSupported ? "Live captions on" : "Final captions only"}
+              </span>
             </>
           )}
         </div>
