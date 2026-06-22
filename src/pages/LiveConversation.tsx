@@ -859,13 +859,11 @@ const LiveConversation = () => {
             return;
           }
           conversationRef.current = createdConversation;
-          createdConversation.setVolume({ volume: 0 });
         },
         onConnect: () => {
           if (runId !== sessionRunRef.current) return;
           agentSessionReadyRef.current = true;
           setSessionStatus("connected");
-          conversationRef.current?.setMicMuted(true);
           conversationRef.current?.sendContextualUpdate(INTERPRETER_SYSTEM_PROMPT);
           conversationRef.current?.sendContextualUpdate(
             `Interpreter mode only. Doctor language is always ${DOCTOR_LANGUAGE.label} (${DOCTOR_LANGUAGE.code}). Patient language: ${patientLanguageRef.current.label} (${patientLanguageRef.current.code}). The doctor speaks FIRST in English. After the doctor stops, speak the translation aloud to the patient in ${patientLanguageRef.current.label} only. Then wait for the patient. No greetings on connect.`,
@@ -924,7 +922,6 @@ const LiveConversation = () => {
         onModeChange: ({ mode: nextMode }) => {
           if (runId !== sessionRunRef.current) return;
           const previousMode = modeRef.current;
-          conversationRef.current?.setMicMuted(true);
           setMode(nextMode);
           modeRef.current = nextMode;
 
