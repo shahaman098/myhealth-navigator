@@ -103,14 +103,22 @@ function localAiDevPlugin(keys: {
 
         try {
           const body = await readJson(req);
-          const text = String(body?.text ?? "").trim();
-          const voice = String(body?.voice ?? "Kore");
+          const rawBody = body as { text?: unknown; voice?: unknown; language?: unknown };
+          const text = String(rawBody?.text ?? "").trim();
+          const voice = String(rawBody?.voice ?? "Kore");
+          const language = String(rawBody?.language ?? "").trim();
           if (!text) {
             res.statusCode = 400;
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({ error: "text is required" }));
             return;
           }
+
+          // Mirror api/gemini-tts.js: steer non-English output toward native pronunciation.
+          const languageName = languageDisplayName(language);
+          const prompt = languageName
+            ? `Say the following in ${languageName} with native ${languageName} pronunciation: ${text}`
+            : text;
 
           const url =
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=" +
@@ -120,7 +128,7 @@ function localAiDevPlugin(keys: {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              contents: [{ parts: [{ text }] }],
+              contents: [{ parts: [{ text: prompt }] }],
               generationConfig: {
                 responseModalities: ["AUDIO"],
                 speechConfig: {
@@ -511,6 +519,17 @@ function readRawBody(req: import("http").IncomingMessage): Promise<Buffer> {
   });
 }
 
+function languageDisplayName(code: string): string {
+  const base = code.split("-")[0].toLowerCase();
+  if (!base || base === "en") return "";
+  try {
+    const name = new Intl.DisplayNames(["en"], { type: "language" }).of(base);
+    return name && name.toLowerCase() !== base ? name : "";
+  } catch {
+    return "";
+  }
+}
+
 function parseSampleRate(mime: string): number {
   const pieces = mime.split(";");
   for (const piece of pieces) {
@@ -548,7 +567,7 @@ export default defineConfig(({ mode }) => {
   return {
     server: {
       host: "::",
-      port: 8080,
+      port: 8090,
     },
     plugins: [
       react(),

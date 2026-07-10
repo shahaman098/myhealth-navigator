@@ -9,6 +9,7 @@ import {
   generateSummary, useConversation, setTurnApproval,
 } from "@/store/conversationStore";
 import { ConversationBubble } from "@/components/ConversationBubble";
+import { ApprovalBadge } from "@/components/ApprovalBadge";
 import { toast } from "@/hooks/use-toast";
 
 const BilingualTranscript = () => {
@@ -77,14 +78,10 @@ const BilingualTranscript = () => {
         ) : (
           <ul>
             {transcript.map((t) => {
-              const colour =
-                t.approval === "approved" ? "hsl(150 80% 50%)" :
-                t.approval === "rejected" ? "hsl(4 86% 58%)" :
-                "hsl(41 100% 55%)";
               return (
                 <li
                   key={t.id + t.savedAt}
-                  className="grid grid-cols-12 gap-2 px-4 py-3 text-sm border-b border-white/[0.04] items-start"
+                  className="grid grid-cols-12 gap-2 px-4 py-3 text-sm border-b border-border/70 items-start"
                 >
                   <div className="col-span-1 text-xs text-muted-foreground">
                     {new Date(t.savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -99,12 +96,7 @@ const BilingualTranscript = () => {
                   <div className="col-span-3 text-muted-foreground leading-relaxed">{t.translated}</div>
                   <div className="col-span-1 font-mono text-xs">{(t.confidence * 100).toFixed(0)}%</div>
                   <div className="col-span-1 flex flex-col gap-1">
-                    <span
-                      className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded text-center"
-                      style={{ background: `${colour}1f`, color: colour, border: `1px solid ${colour}44` }}
-                    >
-                      {t.approval}
-                    </span>
+                    <ApprovalBadge status={t.approval} className="justify-center" />
                     <div className="flex gap-1">
                       <button
                         onClick={() => setTurnApproval(t.id, "approved")}
@@ -115,7 +107,7 @@ const BilingualTranscript = () => {
                       </button>
                       <button
                         onClick={() => setTurnApproval(t.id, "rejected")}
-                        className="text-[10px] text-destructive hover:text-rose-400"
+                        className="text-[10px] text-destructive hover:text-destructive/80"
                         title="Reject"
                       >
                         <XCircle className="h-3 w-3" />

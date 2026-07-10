@@ -8,74 +8,74 @@
 
 @layer base {
   :root {
-    --background: 274 100% 98%;
-    --foreground: 263 32% 18%;
+    --background: 240 25% 98.5%;
+    --foreground: 233 22% 16%;
 
-    --surface-1: 272 100% 98%;
+    --surface-1: 240 25% 98.5%;
     --surface-2: 0 0% 100%;
-    --surface-3: 270 100% 96%;
+    --surface-3: 240 20% 96%;
 
     --card: 0 0% 100%;
-    --card-foreground: 263 32% 18%;
+    --card-foreground: 233 22% 16%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 263 32% 18%;
+    --popover-foreground: 233 22% 16%;
 
-    --primary: 266 76% 64%;
+    --primary: 252 58% 50%;
     --primary-foreground: 0 0% 100%;
-    --primary-muted: 266 100% 96%;
-    --primary-glow: 270 100% 80%;
+    --primary-muted: 252 85% 96%;
+    --primary-glow: 252 80% 72%;
 
-    --secondary: 270 100% 97%;
-    --secondary-foreground: 263 32% 18%;
+    --secondary: 240 18% 95.5%;
+    --secondary-foreground: 233 22% 16%;
 
-    --accent: 266 76% 64%;
+    --accent: 252 58% 50%;
     --accent-foreground: 0 0% 100%;
 
-    --doctor: 266 76% 64%;
-    --patient: 288 62% 62%;
-    --ai: 266 76% 64%;
+    --doctor: 252 58% 50%;
+    --patient: 190 70% 32%;
+    --ai: 252 58% 50%;
 
-    --muted: 270 100% 96%;
-    --muted-foreground: 263 13% 48%;
+    --muted: 240 18% 95.5%;
+    --muted-foreground: 233 10% 44%;
 
-    --border: 267 62% 88%;
-    --input: 270 100% 97%;
-    --ring: 266 76% 64%;
+    --border: 236 16% 89%;
+    --input: 240 18% 96%;
+    --ring: 252 58% 50%;
 
-    --glass: 0 0% 100% / 0.72;
-    --glass-strong: 0 0% 100% / 0.88;
-    --glass-border: 267 62% 88%;
+    --glass: 0 0% 100% / 0.78;
+    --glass-strong: 0 0% 100% / 0.9;
+    --glass-border: 236 16% 89%;
 
-    --destructive: 0 70% 48%;
+    --destructive: 0 68% 45%;
     --destructive-foreground: 0 0% 100%;
-    --warning: 38 92% 44%;
-    --warning-foreground: 263 32% 18%;
-    --success: 152 58% 38%;
+    --warning: 33 92% 40%;
+    --warning-foreground: 233 22% 16%;
+    --success: 152 55% 33%;
     --success-foreground: 0 0% 100%;
 
     --radius: 0.625rem;
     --radius-sm: 0.375rem;
     --radius-lg: 0.875rem;
 
-    --shadow-xs: 0 1px 2px hsl(266 38% 35% / 0.04);
-    --shadow-sm: 0 1px 3px hsl(266 48% 42% / 0.08), 0 1px 2px hsl(266 38% 35% / 0.04);
-    --shadow-md: 0 4px 16px hsl(266 48% 42% / 0.10);
-    --shadow-lg: 0 12px 32px hsl(266 48% 42% / 0.12);
-    --shadow-glow: 0 8px 28px hsl(var(--primary) / 0.18);
-    --shadow-glass: 0 4px 16px hsl(266 48% 42% / 0.08);
+    --shadow-xs: 0 1px 2px hsl(233 30% 20% / 0.04);
+    --shadow-sm: 0 1px 3px hsl(233 30% 20% / 0.07), 0 1px 2px hsl(233 30% 20% / 0.04);
+    --shadow-md: 0 4px 16px hsl(233 30% 20% / 0.08);
+    --shadow-lg: 0 12px 32px hsl(233 30% 20% / 0.10);
+    --shadow-glow: 0 8px 28px hsl(var(--primary) / 0.16);
+    --shadow-glass: 0 4px 16px hsl(233 30% 20% / 0.06);
     --shadow-inner: inset 0 1px 0 hsl(0 0% 100% / 0.9);
 
     --transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
 
-    --sidebar-background: 274 100% 98%;
-    --sidebar-foreground: 263 13% 48%;
-    --sidebar-primary: 266 76% 64%;
+    --sidebar-background: 240 25% 98.5%;
+    --sidebar-foreground: 233 10% 44%;
+    --sidebar-primary: 252 58% 50%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 270 100% 97%;
-    --sidebar-accent-foreground: 263 32% 18%;
-    --sidebar-border: 267 62% 88%;
-    --sidebar-ring: 266 76% 64%;
+    --sidebar-accent: 240 18% 95.5%;
+    --sidebar-accent-foreground: 233 22% 16%;
+    --sidebar-border: 236 16% 89%;
+    --sidebar-ring: 252 58% 50%;
   }
 }
 
@@ -95,7 +95,8 @@
     @apply bg-background text-foreground;
     min-height: 100dvh;
     background:
-      linear-gradient(135deg, hsl(276 100% 99%) 0%, hsl(262 100% 98%) 46%, hsl(292 100% 99%) 100%);
+      radial-gradient(1100px 420px at 50% -12%, hsl(var(--primary) / 0.05), transparent 70%),
+      hsl(var(--background));
     background-attachment: fixed;
   }
 
@@ -625,10 +626,28 @@
     0%, 100% { transform: scaleY(0.4); }
     50%      { transform: scaleY(1);   }
   }
+  @keyframes breathe {
+    0%, 100% { transform: scale(1);    opacity: 0.9; }
+    50%      { transform: scale(1.06); opacity: 1;   }
+  }
+  @keyframes ring-pulse {
+    0%   { transform: scale(0.9); opacity: 0.55; }
+    100% { transform: scale(1.9); opacity: 0;    }
+  }
 
   .animate-fade-in { animation: fade-in 0.2s ease-out both; }
   .animate-slide-up { animation: slide-up 0.25s ease-out both; }
   .animate-pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+  .animate-breathe { animation: breathe 2.6s ease-in-out infinite; }
+
+  .pulse-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    border: 1.5px solid currentColor;
+    animation: ring-pulse 1.8s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+    pointer-events: none;
+  }
 
   .equalizer {
     display: inline-flex;

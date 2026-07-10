@@ -1,6 +1,17 @@
 import { parseSampleRate, pcmToWav } from "./geminiAudio.js";
 import { readJsonBody } from "./readJsonBody.js";
 
+function languageDisplayName(code) {
+  const base = code.split("-")[0].toLowerCase();
+  if (!base || base === "en") return "";
+  try {
+    const name = new Intl.DisplayNames(["en"], { type: "language" }).of(base);
+    return name && name.toLowerCase() !== base ? name : "";
+  } catch {
+    return "";
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -16,10 +27,18 @@ export default async function handler(req, res) {
     const body = await readJsonBody(req);
     const text = typeof body?.text === "string" ? body.text.trim() : "";
     const voice = typeof body?.voice === "string" && body.voice.trim() ? body.voice.trim() : "Kore";
+    const language = typeof body?.language === "string" ? body.language.trim() : "";
 
     if (!text) {
       return res.status(400).json({ error: "text is required" });
     }
+
+    // Gemini TTS follows natural-language style instructions; steer non-English
+    // output toward native pronunciation instead of relying on auto-detection.
+    const languageName = language ? languageDisplayName(language) : "";
+    const prompt = languageName
+      ? `Say the following in ${languageName} with native ${languageName} pronunciation: ${text}`
+      : text;
 
     const url =
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=" +
@@ -29,7 +48,7 @@ export default async function handler(req, res) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text }] }],
+        contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           responseModalities: ["AUDIO"],
           speechConfig: {

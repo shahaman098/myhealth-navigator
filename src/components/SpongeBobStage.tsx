@@ -34,7 +34,7 @@ export function SpongeBobStage({
       <button
         type="button"
         onClick={canTap ? onStart : undefined}
-        disabled={disabled || !canTap || mode === "speaking"}
+        disabled={disabled || !canTap}
         className={cn(
           "kids-sponge-hitarea",
           canTap && !disabled && "cursor-pointer",

@@ -42,7 +42,7 @@ const Home = () => {
       <section className="space-y-5">
         <div className="inline-flex items-center gap-1.5 px-2 h-6 rounded-md text-[11px] font-medium bg-[hsl(var(--surface-2))] border hairline text-muted-foreground">
           <span className="dot text-primary animate-pulse-dot" />
-          Synthetic demo · v0.2
+          Clinical interpreter workspace
         </div>
 
         <h1 className="text-3xl md:text-5xl font-bold tracking-tight leading-[1.08] max-w-3xl">
@@ -51,7 +51,7 @@ const Home = () => {
         </h1>
 
         <p className="text-base text-muted-foreground max-w-2xl leading-relaxed">
-          FlowClear Live sits between the clinician and the patient — translating every turn,
+          MyHealth Navigator sits between the clinician and the patient — translating every turn,
           transcribing the conversation in both languages, and producing a clinician-approved
           summary, key concerns, and agreed next steps.
         </p>

@@ -10,26 +10,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
+import { PATIENT_LANGUAGES, type FlowClearLanguage } from "@/data/languages";
 import {
-  DEFAULT_PATIENT_LANGUAGE,
-  FLOWCLEAR_LANGUAGES,
-  type FlowClearLanguage,
-} from "@/data/languages";
-
-const STORAGE_KEY = "flowclear.language";
-const EVENT_NAME = "flowclear:language-change";
-
-function getActiveLanguage(): FlowClearLanguage {
-  if (typeof window === "undefined") return FLOWCLEAR_LANGUAGES[0];
-  const code = window.localStorage.getItem(STORAGE_KEY) ?? DEFAULT_PATIENT_LANGUAGE.code;
-  return (
-    FLOWCLEAR_LANGUAGES.find((l) => l.code === code) ?? FLOWCLEAR_LANGUAGES[0]
-  );
-}
+  getPreferredPatientLanguage,
+  PATIENT_LANGUAGE_EVENT,
+  setPreferredPatientLanguage,
+} from "@/lib/patientLanguagePreference";
 
 export function LanguageSwitcher() {
   const [active, setActive] = useState<FlowClearLanguage>(() =>
-    getActiveLanguage(),
+    getPreferredPatientLanguage(),
   );
 
   useEffect(() => {
@@ -37,13 +27,12 @@ export function LanguageSwitcher() {
       const detail = (e as CustomEvent<FlowClearLanguage>).detail;
       if (detail) setActive(detail);
     };
-    window.addEventListener(EVENT_NAME, handler);
-    return () => window.removeEventListener(EVENT_NAME, handler);
+    window.addEventListener(PATIENT_LANGUAGE_EVENT, handler);
+    return () => window.removeEventListener(PATIENT_LANGUAGE_EVENT, handler);
   }, []);
 
   const choose = (lang: FlowClearLanguage) => {
-    window.localStorage.setItem(STORAGE_KEY, lang.code);
-    window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: lang }));
+    setPreferredPatientLanguage(lang);
     setActive(lang);
   };
 
@@ -68,15 +57,15 @@ export function LanguageSwitcher() {
       <DropdownMenuContent align="end" className="w-64 glass">
         <DropdownMenuLabel>
           <div className="flex flex-col">
-            <span className="text-sm font-medium">Translation</span>
+            <span className="text-sm font-medium">Default patient language</span>
             <span className="text-xs text-muted-foreground">
-              Used for patient & clinician communications
+              Preselected when opening Live and Kids sessions
             </span>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <div className="max-h-[320px] overflow-y-auto" role="listbox">
-          {FLOWCLEAR_LANGUAGES.map((lang) => (
+          {PATIENT_LANGUAGES.map((lang) => (
             <DropdownMenuItem
               key={lang.code}
               role="option"

@@ -394,14 +394,13 @@ async function streamText(full: string, onChunk: (current: string) => void) {
 }
 
 function speakText(text: string, lang: string): Promise<void> {
-  void lang;
-  return speakWithGemini(text);
+  return speakWithGemini(text, lang);
 }
 
 let currentAudio: HTMLAudioElement | null = null;
 let currentObjectUrl: string | null = null;
 
-async function speakWithGemini(text: string): Promise<void> {
+async function speakWithGemini(text: string, language?: string): Promise<void> {
   if (typeof window === "undefined") {
     throw new Error("No window");
   }
@@ -415,7 +414,7 @@ async function speakWithGemini(text: string): Promise<void> {
         const resp = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
+          body: JSON.stringify({ text, language }),
         });
         if (!resp.ok) {
           const t = await resp.text().catch(() => "");
@@ -430,7 +429,7 @@ async function speakWithGemini(text: string): Promise<void> {
       }
       blob = (await invokeFunction(
         "gemini-tts",
-        { text },
+        { text, language },
         { responseType: "blob" },
       )) as Blob;
       break;

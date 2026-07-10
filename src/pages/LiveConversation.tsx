@@ -1,4 +1,4 @@
-import { Conversation, type Mode, type Status, type VoiceConversation } from "@elevenlabs/client";
+import { Conversation, type Mode, type Status } from "@elevenlabs/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -29,8 +29,8 @@ import {
   useConversation,
 } from "@/store/conversationStore";
 import { DOCTOR, PATIENT, Speaker, Turn } from "@/data/conversationData";
+import { getPreferredPatientLanguage } from "@/lib/patientLanguagePreference";
 import {
-  DEFAULT_PATIENT_LANGUAGE,
   DOCTOR_LANGUAGE,
   PATIENT_LANGUAGES,
   getLanguageByCode,
@@ -210,15 +210,16 @@ const LiveConversation = () => {
   const [selectedSpeaker, setSelectedSpeaker] = useState<Speaker>("doctor");
   const [sessionStatus, setSessionStatus] = useState<Status>("disconnected");
   const [mode, setMode] = useState<Mode>("listening");
-  const [patientLanguage, setPatientLanguage] = useState<FlowClearLanguage>(DEFAULT_PATIENT_LANGUAGE);
+  const [patientLanguage, setPatientLanguage] = useState<FlowClearLanguage>(getPreferredPatientLanguage);
   const [doctorTurnCompleted, setDoctorTurnCompleted] = useState(false);
   const [error, setError] = useState("");
-  const conversationRef = useRef<VoiceConversation | null>(null);
+  // Sessions start with textOnly: true, so this may hold a TextConversation.
+  const conversationRef = useRef<Conversation | null>(null);
   const sessionRunRef = useRef(0);
   const liveSessionWantedRef = useRef(false);
   const reconnectTimerRef = useRef<number | null>(null);
   const selectedRef = useRef<Speaker>("doctor");
-  const patientLanguageRef = useRef<FlowClearLanguage>(DEFAULT_PATIENT_LANGUAGE);
+  const patientLanguageRef = useRef<FlowClearLanguage>(getPreferredPatientLanguage());
   const modeRef = useRef<Mode>("listening");
   const pendingNextSpeakerRef = useRef<Speaker | null>(null);
   const playbackFinishedAwaitingFinalRef = useRef(false);
@@ -1222,96 +1223,106 @@ const LiveConversation = () => {
   return (
     <div className="min-h-[calc(100vh-6.5rem)] bg-transparent">
       <section className="mx-auto flex min-h-[calc(100vh-6.5rem)] w-full max-w-[1480px] flex-col px-5 py-8 md:px-10 lg:px-14">
-        <header className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-5">
-            <div className="mt-1 text-primary">
-              <HeartPulse className="h-8 w-8" />
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3.5">
+            <div className="surface flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl text-primary">
+              <HeartPulse className="h-6 w-6" />
             </div>
-            <div>
-              <h1 className="text-2xl font-semibold leading-tight text-foreground">Interpreter</h1>
-              <p className="mt-2 text-lg text-muted-foreground">Doctor ↔ patient relay only</p>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h1 className="text-xl font-semibold leading-tight text-foreground">Live interpreter</h1>
+                <SessionStatusPill status={sessionStatus} />
+              </div>
+              <p className="mt-0.5 truncate text-sm text-muted-foreground">{selectedDirection}</p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <DoctorLanguageBadge />
+          <div className="flex flex-wrap items-center gap-2">
+            <QuickLink to="/transcript" icon={<FileText className="h-4 w-4" />}>
+              Transcript
+              <CountBadge value={transcript.length} />
+            </QuickLink>
+            <QuickButton onClick={() => navigate("/review")} icon={<ShieldCheck className="h-4 w-4" />}>
+              Review
+              <CountBadge value={pendingReview} />
+            </QuickButton>
             <PatientLanguageSelect
               value={patientLanguage}
               onChange={selectPatientLanguage}
+              compact
             />
-            <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground hover:text-primary" onClick={handleReset}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="rounded-full text-muted-foreground hover:text-primary"
+              title="Reset session"
+              aria-label="Reset session"
+              onClick={handleReset}
+            >
               <RotateCcw className="h-5 w-5" />
             </Button>
           </div>
         </header>
 
-        <div className="mt-6 flex flex-wrap items-center gap-2 pl-0 md:pl-[4.25rem]">
-          <QuickLink to="/transcript" icon={<FileText className="h-4 w-4" />}>
-            Transcript {transcript.length}
-          </QuickLink>
-          <QuickButton onClick={() => navigate("/review")} icon={<ShieldCheck className="h-4 w-4" />}>
-            Review {pendingReview}
-          </QuickButton>
-          <span className="glass-pill inline-flex h-9 items-center gap-2 rounded-md px-4 text-sm font-medium text-muted-foreground">
-            <Languages className="h-4 w-4 text-primary" />
-            {selectedDirection}
-          </span>
-        </div>
-
         {error && (
-          <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 md:ml-[4.25rem]">
-            {error}
-            <button type="button" onClick={beginLiveSession} className="ml-3 font-semibold underline">
-              Retry ElevenLabs
+          <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            <span className="min-w-0 flex-1">{error}</span>
+            <button type="button" onClick={beginLiveSession} className="font-semibold underline underline-offset-2">
+              Retry connection
             </button>
           </div>
         )}
 
-        <main className="flex-1 overflow-y-auto px-0 pb-36 pt-10 md:px-16 lg:px-28">
+        <main className="flex-1 overflow-y-auto px-0 pb-48 pt-8 md:px-16 md:pb-36 lg:px-28">
           {transcript.length === 0 && !liveTurn ? (
             <EmptyChat
               sessionStatus={sessionStatus}
               patientLanguage={patientLanguage}
               onLanguageChange={selectPatientLanguage}
+              onStart={beginLiveSession}
               browserCaptioningSupported={browserCaptioningSupported}
             />
           ) : (
             <div className="mx-auto flex max-w-6xl flex-col gap-16">
               {transcript.map((t) => (
-                <ConversationBubble
-                  key={t.id + t.savedAt}
-                  speaker={t.speaker}
-                  speakerName={speakerCopy[t.speaker].label}
-                  originalLang={t.originalLang}
-                  original={t.original}
-                  translatedLang={t.translatedLang}
-                  translated={t.translated}
-                  confidence={t.confidence}
-                  approval={t.approval}
-                  timestamp={new Date(t.savedAt).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                />
+                <div key={t.id + t.savedAt} className="animate-slide-up">
+                  <ConversationBubble
+                    speaker={t.speaker}
+                    speakerName={speakerCopy[t.speaker].label}
+                    originalLang={t.originalLang}
+                    original={t.original}
+                    translatedLang={t.translatedLang}
+                    translated={t.translated}
+                    confidence={t.confidence}
+                    approval={t.approval}
+                    timestamp={new Date(t.savedAt).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  />
+                </div>
               ))}
               {liveTurn && (
-                <ConversationBubble
-                  speaker={liveTurn.speaker}
-                  speakerName={speakerCopy[liveTurn.speaker].label}
-                  originalLang={liveTurn.originalLang}
-                  original={liveTurn.original}
-                  translatedLang={liveTurn.translatedLang}
-                  translated={liveTurn.translated}
-                  confidence={liveTurn.confidence}
-                  approval="pending"
-                  pending={phase !== "listening"}
-                  timestamp="now"
-                />
+                <div className="animate-slide-up">
+                  <ConversationBubble
+                    speaker={liveTurn.speaker}
+                    speakerName={speakerCopy[liveTurn.speaker].label}
+                    originalLang={liveTurn.originalLang}
+                    original={liveTurn.original}
+                    translatedLang={liveTurn.translatedLang}
+                    translated={liveTurn.translated}
+                    confidence={liveTurn.confidence}
+                    approval="pending"
+                    pending={phase !== "listening"}
+                    timestamp="now"
+                  />
+                </div>
               )}
             </div>
           )}
         </main>
 
+        {(sessionLive || transcript.length > 0 || liveTurn != null) && (
         <VoiceComposer
           active={active}
           mode={mode}
@@ -1321,7 +1332,6 @@ const LiveConversation = () => {
           liveText={currentOriginal}
           selectedSpeaker={selectedSpeaker}
           patientLanguage={patientLanguage}
-          onLanguageChange={selectPatientLanguage}
           switchSpeaker={switchSpeaker}
           onMicPress={beginLiveSession}
           onStopSpeakerTurn={finishCurrentSpeakerTurn}
@@ -1332,29 +1342,49 @@ const LiveConversation = () => {
           browserCaptioningSupported={browserCaptioningSupported}
           liveInterimText={liveInterimText}
         />
+        )}
       </section>
     </div>
   );
 };
 
-function DoctorLanguageBadge({ compact = false }: { compact?: boolean }) {
+const SESSION_STATUS_META: Record<string, { label: string; colour: string; live?: boolean }> = {
+  disconnected: { label: "Ready", colour: "hsl(var(--muted-foreground))" },
+  connecting: { label: "Connecting…", colour: "hsl(var(--warning))" },
+  connected: { label: "Live", colour: "hsl(var(--success))", live: true },
+  disconnecting: { label: "Disconnecting…", colour: "hsl(var(--muted-foreground))" },
+};
+
+function SessionStatusPill({ status }: { status: Status }) {
+  const meta = SESSION_STATUS_META[status] ?? SESSION_STATUS_META.disconnected;
   return (
-    <div
+    <span
+      className="inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold uppercase tracking-wider"
+      style={{
+        background: `color-mix(in srgb, ${meta.colour} 10%, transparent)`,
+        color: meta.colour,
+        borderColor: `color-mix(in srgb, ${meta.colour} 28%, transparent)`,
+      }}
+    >
+      <span
+        className={cn("h-1.5 w-1.5 rounded-full", meta.live && "animate-pulse")}
+        style={{ background: meta.colour }}
+      />
+      {meta.label}
+    </span>
+  );
+}
+
+function CountBadge({ value }: { value: number }) {
+  return (
+    <span
       className={cn(
-        "glass-pill flex items-center gap-2 rounded-lg px-4 py-2",
-        compact ? "min-w-0 flex-shrink-0 px-3 py-1.5" : "min-w-[170px]",
+        "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 font-mono text-[11px] font-semibold tabular",
+        value > 0 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
       )}
     >
-      <Stethoscope className="h-4 w-4 flex-shrink-0 text-primary" />
-      <div className="min-w-0">
-        {!compact && (
-          <p className="text-[11px] font-medium leading-4 text-muted-foreground">Doctor language</p>
-        )}
-        <p className={cn("font-semibold text-foreground", compact ? "text-sm" : "text-sm")}>
-          {DOCTOR_LANGUAGE.label}
-        </p>
-      </div>
-    </div>
+      {value}
+    </span>
   );
 }
 
@@ -1362,44 +1392,83 @@ function EmptyChat({
   sessionStatus,
   patientLanguage,
   onLanguageChange,
+  onStart,
   browserCaptioningSupported,
 }: {
   sessionStatus: Status;
   patientLanguage: FlowClearLanguage;
   onLanguageChange: (code: string) => void;
+  onStart: () => void;
   browserCaptioningSupported: boolean;
 }) {
+  const connected = sessionStatus === "connected";
+  const connecting = sessionStatus === "connecting";
+  const steps = [
+    `Doctor speaks first in ${DOCTOR_LANGUAGE.label}, then presses Stop doctor.`,
+    `The interpreter speaks the translation aloud in ${patientLanguage.label}.`,
+    `The patient replies; press Stop patient to hear it in ${DOCTOR_LANGUAGE.label}.`,
+  ];
+
   return (
-    <div className="mx-auto flex min-h-[46vh] max-w-3xl flex-col justify-center">
-      <div className="flex items-start gap-5">
-        <div className="surface flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg text-primary">
-          <HeartPulse className="h-7 w-7" />
-        </div>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <p className="text-[22px] leading-9 text-foreground">
-              {sessionStatus === "connected"
-                ? "Always listening — just speak."
-                : "Choose your patient language."}
-            </p>
-            <p className="text-lg leading-8 text-muted-foreground">
-              {sessionStatus === "connected"
-                ? `Doctor speaks first in ${DOCTOR_LANGUAGE.label}. Press Stop doctor to translate and speak ${patientLanguage.label}, then press Stop patient to speak English back to the doctor.`
-                : `Pick a language, tap the mic once, speak as the doctor, then press Stop doctor to speak ${patientLanguage.label}; after the patient replies, press Stop patient to speak English to the doctor.`}
+    <div className="animate-fade-in mx-auto flex min-h-[46vh] max-w-2xl flex-col justify-center">
+      <div className="surface group relative space-y-6 overflow-hidden rounded-2xl p-6 transition-shadow duration-300 hover:shadow-lg md:p-8">
+        <div
+          className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-primary/10 blur-3xl transition-opacity duration-500 group-hover:opacity-80"
+          aria-hidden
+        />
+        <div className="relative flex items-center gap-4">
+          <div className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            {connected && <span className="pulse-ring" />}
+            <HeartPulse className={cn("h-6 w-6", !connected && "animate-breathe")} />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">
+              {connected ? "You're live — just speak." : "Start a live interpreted visit"}
+            </h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {DOCTOR_LANGUAGE.label}-speaking doctor ↔ {patientLanguage.label}-speaking patient
             </p>
           </div>
-          <DoctorLanguageBadge />
-          <PatientLanguageSelect
-            value={patientLanguage}
-            onChange={onLanguageChange}
-            prominent
-          />
-          {!browserCaptioningSupported && (
-            <p className="max-w-xl text-sm leading-6 text-muted-foreground">
-              Live captions are not available in this browser, but final transcription still runs after each pause.
-            </p>
+        </div>
+
+        <ol className="relative space-y-2.5">
+          {steps.map((step, i) => (
+            <li
+              key={step}
+              className="animate-slide-up flex items-start gap-3 text-[15px] leading-6 text-muted-foreground"
+              style={{ animationDelay: `${i * 60}ms` }}
+            >
+              <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 font-mono text-[11px] font-semibold text-primary tabular">
+                {i + 1}
+              </span>
+              {step}
+            </li>
+          ))}
+        </ol>
+
+        <div className="relative flex flex-wrap items-center gap-3">
+          <PatientLanguageSelect value={patientLanguage} onChange={onLanguageChange} prominent />
+          {!connected && (
+            <Button
+              onClick={onStart}
+              disabled={connecting}
+              size="lg"
+              className={cn(
+                "h-11 gap-2 px-5 transition-transform duration-150 active:scale-95",
+                !connecting && "hover:scale-[1.03]",
+              )}
+            >
+              <Mic className={cn("h-4 w-4", connecting && "animate-pulse")} />
+              {connecting ? "Connecting…" : "Start live session"}
+            </Button>
           )}
         </div>
+
+        {!browserCaptioningSupported && (
+          <p className="relative text-sm leading-6 text-muted-foreground">
+            Live captions are not available in this browser, but final transcription still runs after each pause.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -1463,7 +1532,6 @@ function VoiceComposer({
   liveText,
   selectedSpeaker,
   patientLanguage,
-  onLanguageChange,
   switchSpeaker,
   onMicPress,
   onStopSpeakerTurn,
@@ -1482,7 +1550,6 @@ function VoiceComposer({
   liveText: string;
   selectedSpeaker: Speaker;
   patientLanguage: FlowClearLanguage;
-  onLanguageChange: (code: string) => void;
   switchSpeaker: (speaker: Speaker) => void;
   onMicPress: () => void;
   onStopSpeakerTurn: () => void;
@@ -1540,19 +1607,16 @@ function VoiceComposer({
   const ActionIcon = micLive ? Square : Mic;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-7 z-30 px-5">
+    <div className="animate-slide-up pointer-events-none fixed inset-x-0 bottom-7 z-30 px-5">
       <div className="pointer-events-auto mx-auto max-w-5xl">
-        <div className="glass-strong flex min-h-[86px] flex-col gap-3 rounded-2xl px-5 py-3 md:flex-row md:items-center md:gap-4 md:px-6">
+        <div className="glass-strong flex min-h-[86px] flex-col gap-3 rounded-2xl px-5 py-3 shadow-lg transition-shadow duration-300 md:flex-row md:items-center md:gap-4 md:px-6">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <DoctorLanguageBadge compact />
-              <PatientLanguageSelect
-                value={patientLanguage}
-                onChange={onLanguageChange}
-                compact
+            <div className="relative inline-flex rounded-full bg-muted/60 p-1">
+              <span
+                className="absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-full bg-primary shadow-sm transition-transform duration-200 ease-out"
+                style={{ transform: selectedSpeaker === "patient" ? "translateX(100%)" : "translateX(0%)" }}
+                aria-hidden
               />
-            </div>
-            <div className="inline-flex rounded-full bg-muted/60 p-1">
               {(["doctor", "patient"] as const).map((speaker) => {
                 const copy = speakerCopy[speaker];
                 const Icon = copy.icon;
@@ -1565,11 +1629,9 @@ function VoiceComposer({
                     onClick={() => switchSpeaker(speaker)}
                     disabled={locked}
                     className={cn(
-                      "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-semibold sm:text-sm",
-                      activeSpeaker
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "text-muted-foreground",
-                      locked && "cursor-not-allowed opacity-40",
+                      "relative z-10 inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition-colors duration-200 sm:text-sm",
+                      activeSpeaker ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                      locked && "cursor-not-allowed opacity-40 hover:text-muted-foreground",
                     )}
                   >
                     <Icon className="h-3.5 w-3.5" />
@@ -1602,28 +1664,36 @@ function VoiceComposer({
             onClick={micLive ? onStopSpeakerTurn : onMicPress}
             disabled={status === "connecting" || stoppingDisabled}
             className={cn(
-              "flex h-16 flex-shrink-0 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold shadow-md ring-1 ring-primary/15",
+              "relative mx-auto flex h-16 flex-shrink-0 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold shadow-md ring-1 ring-primary/15 transition-transform duration-150 md:mx-0",
               micLive
                 ? "min-w-[10.5rem] bg-primary text-white ring-2 ring-primary/30"
                 : "w-16 bg-card text-primary",
+              status !== "connecting" && !stoppingDisabled && "hover:scale-105 active:scale-95",
               (status === "connecting" || stoppingDisabled) && "cursor-not-allowed opacity-70",
               status === "connecting" && "animate-pulse",
             )}
             aria-label={micLive ? actionLabel : "Start live interpreter"}
           >
-            <ActionIcon className={cn(micLive ? "h-4 w-4" : "h-8 w-8")} />
-            {micLive && <span>{actionLabel}</span>}
+            {micLive && (
+              <>
+                <span className="pulse-ring text-primary-foreground/70" />
+                <span className="pulse-ring text-primary-foreground/70" style={{ animationDelay: "0.6s" }} />
+              </>
+            )}
+            <ActionIcon className={cn("relative", micLive ? "h-4 w-4" : "h-8 w-8")} />
+            {micLive && <span className="relative">{actionLabel}</span>}
           </button>
         </div>
 
         <div className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <span>{statusLabel}</span>
+          <span className="animate-fade-in" key={statusLabel}>{statusLabel}</span>
           <span>—</span>
           <span>{direction}</span>
           {micLive && (
             <>
               <span>—</span>
-              <span className="font-medium text-primary">
+              <span className="inline-flex items-center gap-1.5 font-medium text-primary">
+                <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-primary" />
                 {browserCaptioningSupported ? "Live captions on" : "Final captions only"}
               </span>
             </>
@@ -1670,7 +1740,7 @@ function QuickLink({
   return (
     <Link
       to={to}
-      className="glass-pill inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/35 hover:text-primary"
+      className="glass-pill inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium text-muted-foreground transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/35 hover:text-primary hover:shadow-md active:translate-y-0"
     >
       {icon}
       {children}
@@ -1691,7 +1761,7 @@ function QuickButton({
     <button
       type="button"
       onClick={onClick}
-      className="glass-pill inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/35 hover:text-primary"
+      className="glass-pill inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium text-muted-foreground transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/35 hover:text-primary hover:shadow-md active:translate-y-0"
     >
       {icon}
       {children}

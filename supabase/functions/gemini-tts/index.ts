@@ -30,7 +30,15 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const text: string = (body?.text ?? "").toString().trim();
     const voice: string = (body?.voice ?? DEFAULT_VOICE).toString();
+    const language: string = (body?.language ?? "").toString().trim();
     if (!text) throw new Error("text is required");
+
+    // Gemini TTS follows natural-language style instructions; steer non-English
+    // output toward native pronunciation instead of relying on auto-detection.
+    const languageName = languageDisplayName(language);
+    const prompt = languageName
+      ? `Say the following in ${languageName} with native ${languageName} pronunciation: ${text}`
+      : text;
 
     // Gemini 2.5 Flash Preview TTS
     const url =
@@ -38,7 +46,7 @@ serve(async (req) => {
       encodeURIComponent(GEMINI_API_KEY);
 
     const payload = {
-      contents: [{ parts: [{ text }] }],
+      contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         responseModalities: ["AUDIO"],
         speechConfig: {
@@ -114,6 +122,17 @@ serve(async (req) => {
     );
   }
 });
+
+function languageDisplayName(code: string): string {
+  const base = code.split("-")[0].toLowerCase();
+  if (!base || base === "en") return "";
+  try {
+    const name = new Intl.DisplayNames(["en"], { type: "language" }).of(base);
+    return name && name.toLowerCase() !== base ? name : "";
+  } catch {
+    return "";
+  }
+}
 
 function parseSampleRate(mime: string): number {
   // Examples: "audio/L16;codec=pcm;rate=24000"

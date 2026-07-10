@@ -4,16 +4,11 @@ import { Button } from "@/components/ui/button";
 import { resetConversation, useConversation } from "@/store/conversationStore";
 import { toast } from "@/hooks/use-toast";
 
-const toneColour = (tone: string) => {
-  switch (tone) {
-    case "speech":      return "hsl(266 76% 64%)";
-    case "transcribe":  return "hsl(270 92% 72%)";
-    case "translate":   return "hsl(288 62% 62%)";
-    case "tts":         return "hsl(278 82% 68%)";
-    case "review":      return "hsl(262 56% 58%)";
-    case "warning":     return "hsl(4 86% 58%)";
-    default:            return "hsl(263 13% 48%)";
-  }
+const TONE_META: Record<string, { label: string; colour: string }> = {
+  green: { label: "Approved", colour: "hsl(var(--success))" },
+  amber: { label: "Attention", colour: "hsl(var(--warning))" },
+  red: { label: "Rejected", colour: "hsl(var(--destructive))" },
+  neutral: { label: "Info", colour: "hsl(var(--muted-foreground))" },
 };
 
 const AuditTrail = () => {
@@ -56,9 +51,9 @@ const AuditTrail = () => {
             No events yet. Open the Live Conversation Room and run the demo.
           </p>
         ) : (
-          <ul className="divide-y divide-white/[0.04]">
+          <ul className="divide-y divide-border/70">
             {audit.map((e) => {
-              const colour = toneColour(e.tone);
+              const meta = TONE_META[e.tone] ?? TONE_META.neutral;
               return (
                 <li key={e.id} className="grid grid-cols-12 gap-2 px-4 py-3 text-sm items-start">
                   <div className="col-span-2 text-xs font-mono text-muted-foreground">
@@ -70,11 +65,15 @@ const AuditTrail = () => {
                   </div>
                   <div className="col-span-2">
                     <span
-                      className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1"
-                      style={{ background: `${colour}1f`, color: colour, border: `1px solid ${colour}44` }}
+                      className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1 border"
+                      style={{
+                        background: `color-mix(in srgb, ${meta.colour} 12%, transparent)`,
+                        color: meta.colour,
+                        borderColor: `color-mix(in srgb, ${meta.colour} 30%, transparent)`,
+                      }}
                     >
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: colour }} />
-                      {e.tone}
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.colour }} />
+                      {meta.label}
                     </span>
                   </div>
                   <div className="col-span-8 text-foreground leading-relaxed">{e.message}</div>

@@ -5,7 +5,7 @@ import {
   AlertTriangle,
   FileText,
   HeartPulse,
-  MonitorPlay,
+  Home as HomeIcon,
   Radio,
   Settings as SettingsIcon,
   ShieldCheck,
@@ -23,7 +23,7 @@ interface NavItemDef {
 }
 
 const primaryNav: NavItemDef[] = [
-  { to: "/demo", label: "Lingo", icon: MonitorPlay },
+  { to: "/", label: "Home", icon: HomeIcon, end: true },
   { to: "/live", label: "Live", icon: Radio },
   { to: "/kids", label: "Kids", icon: Smile },
   { to: "/transcript", label: "Transcript", icon: FileText },
@@ -33,19 +33,19 @@ const primaryNav: NavItemDef[] = [
 ];
 
 const PHASE_META: Record<string, { label: string; color: string }> = {
-  idle: { label: "Ready", color: "262 12% 43%" },
-  listening: { label: "Listening live", color: "266 76% 64%" },
-  transcribing: { label: "Transcribing", color: "270 92% 66%" },
-  translating: { label: "Translating", color: "288 62% 62%" },
-  speaking: { label: "Speaking aloud", color: "278 82% 58%" },
+  idle: { label: "Ready", color: "233 10% 44%" },
+  listening: { label: "Listening live", color: "252 58% 50%" },
+  transcribing: { label: "Transcribing", color: "252 58% 56%" },
+  translating: { label: "Translating", color: "190 70% 32%" },
+  speaking: { label: "Speaking aloud", color: "152 55% 33%" },
 };
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const phase = useConversation((s) => s.phase);
-  const isLiveRoute = pathname === "/" || pathname.startsWith("/live");
+  const isLiveRoute = pathname.startsWith("/live");
   const safetyText =
-    pathname.startsWith("/demo")
+    pathname === "/" || pathname.startsWith("/demo")
       ? "Synthetic demo data. Use Live for real microphone transcription and translation."
       : isLiveRoute
         ? "Real ElevenLabs live voice mode. Audio streams to the configured ElevenLabs agent for testing."
@@ -55,32 +55,32 @@ export default function Layout({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-40 border-b border-border bg-card shadow-sm">
         <div className="mx-auto flex h-[4.25rem] w-full max-w-[1500px] items-center gap-4 px-4 lg:px-6">
-          <Link to="/" className="flex min-w-0 items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+          <Link to="/" className="flex min-w-0 flex-shrink-0 items-center gap-3">
+            <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
               <HeartPulse className="h-5 w-5" />
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold leading-tight tracking-tight">
+              <span className="block truncate whitespace-nowrap text-sm font-semibold leading-tight tracking-tight">
                 MyHealth Navigator
               </span>
-              <span className="hidden text-xs leading-tight text-muted-foreground sm:block">
+              <span className="hidden truncate whitespace-nowrap text-xs leading-tight text-muted-foreground lg:block">
                 Clinical interpreter workspace
               </span>
             </span>
           </Link>
 
-          <nav className="ml-auto hidden items-center gap-0.5 md:flex">
+          <nav className="ml-auto hidden min-w-0 items-center gap-0.5 md:flex">
             {primaryNav.map((item) => (
               <NavItem key={item.to} {...item} active={isActive(pathname, item.to, item.end)} />
             ))}
           </nav>
 
-          <div className="ml-auto flex items-center gap-2 md:ml-2">
+          <div className="ml-auto flex flex-shrink-0 items-center gap-2 md:ml-2">
             <PhaseChip phase={phase} />
-            <Button asChild size="sm" className="hidden gap-1.5 shadow-sm sm:inline-flex">
+            <Button asChild size="sm" className="hidden gap-1.5 shadow-sm lg:inline-flex">
               <Link to="/live">
                 <Radio className="h-3.5 w-3.5" />
-                Start listening
+                Open Live room
               </Link>
             </Button>
           </div>
@@ -106,7 +106,6 @@ export default function Layout({ children }: { children: ReactNode }) {
 }
 
 function isActive(pathname: string, to: string, end?: boolean) {
-  if (pathname === "/" && to === "/live") return true;
   if (end) return pathname === to;
   return pathname === to || pathname.startsWith(to + "/");
 }
@@ -121,8 +120,9 @@ function NavItem({
   return (
     <NavLink
       to={to}
+      title={mobile ? undefined : label}
       className={cn(
-        "inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition-colors",
+        "inline-flex h-9 flex-shrink-0 items-center justify-center gap-1.5 rounded-md px-2 text-sm font-medium transition-colors lg:gap-2 lg:px-3",
         active
           ? "bg-primary text-primary-foreground shadow-sm"
           : "text-muted-foreground hover:bg-secondary hover:text-foreground",
@@ -130,7 +130,7 @@ function NavItem({
       )}
     >
       <Icon className="h-4 w-4 flex-shrink-0" />
-      <span>{label}</span>
+      <span className={cn(!mobile && "hidden lg:inline")}>{label}</span>
     </NavLink>
   );
 }

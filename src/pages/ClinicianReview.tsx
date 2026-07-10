@@ -14,7 +14,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { DOCTOR, PATIENT } from "@/data/conversationData";
 import { ConversationBubble } from "@/components/ConversationBubble";
-import { cn } from "@/lib/utils";
+import { ApprovalBadge } from "@/components/ApprovalBadge";
 
 const ClinicianReview = () => {
   const navigate = useNavigate();
@@ -35,7 +35,7 @@ const ClinicianReview = () => {
           <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">Clinician review</h1>
           <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-primary" />
-            FlowClear Live does not make clinical decisions. Every item requires clinician approval.
+            MyHealth Navigator does not make clinical decisions. Every item requires clinician approval.
           </p>
         </div>
         <Button
@@ -126,8 +126,8 @@ const ClinicianReview = () => {
         {summary ? (
           <p className="text-sm text-foreground leading-relaxed">{summary}</p>
         ) : (
-          <div className="text-sm text-muted-foreground p-4 rounded-lg border border-amber-400/30 bg-amber-400/5 flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-400" />
+          <div className="text-sm text-muted-foreground p-4 rounded-lg border border-warning/30 bg-warning/5 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-warning" />
             No summary generated yet. Click <em>Generate summary</em> above.
           </div>
         )}
@@ -135,7 +135,7 @@ const ClinicianReview = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <ReviewList
-          icon={<AlertTriangle className="h-4 w-4 text-amber-400" />}
+          icon={<AlertTriangle className="h-4 w-4 text-warning" />}
           title="Key concerns"
           empty="Generate the summary to extract patient concerns."
           items={concerns}
@@ -161,18 +161,9 @@ function ApprovalControls({
   onReject: () => void;
   disabled?: boolean;
 }) {
-  const colour =
-    status === "approved" ? "hsl(150 80% 50%)" :
-    status === "rejected" ? "hsl(4 86% 58%)" :
-    "hsl(41 100% 55%)";
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <span
-        className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded"
-        style={{ background: `${colour}1f`, color: colour, border: `1px solid ${colour}44` }}
-      >
-        {status}
-      </span>
+      <ApprovalBadge status={status} />
       <Button size="sm" onClick={onApprove} disabled={disabled} className="h-7 gap-1">
         <CheckCircle2 className="h-3 w-3" /> Approve
       </Button>
@@ -222,11 +213,6 @@ function ReviewRow({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(item.text);
 
-  const colour =
-    item.status === "approved" ? "hsl(150 80% 50%)" :
-    item.status === "rejected" ? "hsl(4 86% 58%)" :
-    "hsl(41 100% 55%)";
-
   return (
     <li className="surface-inset p-3">
       <div className="flex items-start justify-between gap-3 mb-2">
@@ -241,19 +227,14 @@ function ReviewRow({
             <p className="leading-relaxed">
               {item.text}
               {item.edited && (
-                <span className="ml-2 text-[10px] uppercase tracking-wider font-bold text-amber-300/80">
+                <span className="ml-2 text-[10px] uppercase tracking-wider font-bold text-warning">
                   · edited
                 </span>
               )}
             </p>
           )}
         </div>
-        <span
-          className={cn("text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded flex-shrink-0")}
-          style={{ background: `${colour}1f`, color: colour, border: `1px solid ${colour}44` }}
-        >
-          {item.status}
-        </span>
+        <ApprovalBadge status={item.status} className="flex-shrink-0" />
       </div>
       <div className="flex gap-2 flex-wrap">
         {editing ? (

@@ -15,6 +15,7 @@ import {
   PATIENT_LANGUAGES,
   type FlowClearLanguage,
 } from "@/data/languages";
+import { getPreferredPatientLanguage } from "@/lib/patientLanguagePreference";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { SpongeBobStage, type SpongeBobMode } from "@/components/SpongeBobStage";
@@ -189,7 +190,7 @@ function encodeWav(samples: Float32Array, sampleRate: number): Blob {
 }
 
 const KidsMode = () => {
-  const [languageCode, setLanguageCode] = useState(DEFAULT_PATIENT_LANGUAGE.code);
+  const [languageCode, setLanguageCode] = useState(() => getPreferredPatientLanguage().code);
   const [activeSpeaker, setActiveSpeaker] = useState<KidsSpeaker>("doctor");
   const [lastTurnSpeaker, setLastTurnSpeaker] = useState<KidsSpeaker | null>(null);
   const [speaking, setSpeaking] = useState(false);
@@ -226,8 +227,9 @@ const KidsMode = () => {
   const playbackRef = useRef<HTMLAudioElement | null>(null);
   const playbackUrlRef = useRef<string | null>(null);
   const rafRef = useRef<number | null>(null);
-  const patientLanguageCodeRef = useRef(DEFAULT_PATIENT_LANGUAGE.code);
+  const patientLanguageCodeRef = useRef(getPreferredPatientLanguage().code);
   const activeSpeakerRef = useRef<KidsSpeaker>("doctor");
+  const prefixTranslationsRef = useRef(new Map<string, string>());
 
   const patientLanguage = useMemo(
     () => PATIENT_LANGUAGES.find((language) => language.code === languageCode) ?? DEFAULT_PATIENT_LANGUAGE,
@@ -266,8 +268,9 @@ const KidsMode = () => {
         setVoiceReady(true);
       })
       .catch((err) => {
+        // The lookup only supplies the display name and preview sample — never block the voice on it.
         setVoiceDirectoryError(err instanceof Error ? err.message : "Could not load SpongeBob voice");
-        setVoiceReady(false);
+        setVoiceReady(true);
       });
 
     return () => {
@@ -331,16 +334,14 @@ const KidsMode = () => {
   }, []);
 
   const relayToPatient = useCallback(
-    async (englishText: string) => {
+    async (englishText: string, translated: string) => {
       const patientCode = patientLanguageCodeRef.current;
-      const [translated, prefix] = await Promise.all([
-        patientCode === DOCTOR_LANGUAGE.code
-          ? englishText
-          : translateText(englishText, DOCTOR_LANGUAGE.code, patientCode),
-        patientCode === DOCTOR_LANGUAGE.code
-          ? PATIENT_PREFIX
-          : translateText(PATIENT_PREFIX, DOCTOR_LANGUAGE.code, patientCode),
-      ]);
+      let prefix = PATIENT_PREFIX;
+      if (patientCode !== DOCTOR_LANGUAGE.code) {
+        const cached = prefixTranslationsRef.current.get(patientCode);
+        prefix = cached ?? (await translateText(PATIENT_PREFIX, DOCTOR_LANGUAGE.code, patientCode));
+        prefixTranslationsRef.current.set(patientCode, prefix);
+      }
       const spoken = `${prefix} ${translated}`;
       setTurns((prev) => [
         ...prev,
@@ -411,7 +412,7 @@ const KidsMode = () => {
               ? transcript
               : await translateText(transcript, DOCTOR_LANGUAGE.code, patientCode);
           setTranslatedText(patientOut);
-          await relayToPatient(transcript);
+          await relayToPatient(transcript, patientOut);
         } else {
           const englishOut = await translateText(transcript, patientCode, DOCTOR_LANGUAGE.code);
           setTranslatedText(englishOut);

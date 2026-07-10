@@ -2,7 +2,11 @@ import { buildLiveTtsPayload } from "./liveVoiceSettings.js";
 import { fetchWithElevenLabsKeys, getElevenLabsApiKeysFromEnv } from "./elevenLabsKeys.js";
 import { readJsonBody } from "./readJsonBody.js";
 
-async function resolveAgentVoiceId(apiKeys, patientLanguageCode) {
+// Cache agent → voice_id so each spoken translation costs one ElevenLabs call, not two.
+const agentVoiceIdCache = new Map();
+const AGENT_VOICE_ID_TTL_MS = 10 * 60 * 1000;
+
+function agentIdForPatientLanguage(patientLanguageCode) {
   const agentId =
     patientLanguageCode === "fr" && process.env.ELEVENLABS_AGENT_ID_FR
       ? process.env.ELEVENLABS_AGENT_ID_FR
@@ -10,6 +14,14 @@ async function resolveAgentVoiceId(apiKeys, patientLanguageCode) {
 
   if (!agentId) {
     throw new Error("ELEVENLABS_AGENT_ID is not configured");
+  }
+  return agentId;
+}
+
+async function resolveAgentVoiceId(apiKeys, agentId) {
+  const cached = agentVoiceIdCache.get(agentId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.voiceId;
   }
 
   const { response: upstream } = await fetchWithElevenLabsKeys(
@@ -28,6 +40,7 @@ async function resolveAgentVoiceId(apiKeys, patientLanguageCode) {
     throw new Error("Interpreter voice_id not found on ElevenLabs agent");
   }
 
+  agentVoiceIdCache.set(agentId, { voiceId, expiresAt: Date.now() + AGENT_VOICE_ID_TTL_MS });
   return voiceId;
 }
 
@@ -55,7 +68,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "text is required" });
     }
 
-    const voiceId = await resolveAgentVoiceId(apiKeys, patientLanguageCode);
+    const agentId = agentIdForPatientLanguage(patientLanguageCode);
+    const voiceId = await resolveAgentVoiceId(apiKeys, agentId);
 
     const { response: upstream } = await fetchWithElevenLabsKeys(
       apiKeys,
@@ -71,6 +85,10 @@ export default async function handler(req, res) {
     );
 
     if (!upstream.ok) {
+      // A rejected voice usually means the agent's voice changed; re-resolve next time.
+      if (upstream.status === 400 || upstream.status === 404) {
+        agentVoiceIdCache.delete(agentId);
+      }
       const detail = await upstream.text().catch(() => "");
       return res.status(upstream.status).json({
         error: `ElevenLabs live TTS error (${upstream.status})`,
